@@ -2259,12 +2259,19 @@ function showMsg(text){const d=document.createElement('div');d.className='messag
 
 // ─── MULTIPLAYER ──────────────────────────────────────
 function mpLobby(html){const el=document.getElementById('mpLobby');el.style.display='block';el.innerHTML=html;}
+const MP_CFG={debug:0,config:{iceServers:[
+{urls:'stun:stun.l.google.com:19302'},
+{urls:'stun:stun1.l.google.com:19302'},
+{urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+{urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
+{urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'},
+]}};
 
 function mpHost(){
 mpLobby('<span style="color:#aaa;font-size:12px">Creating room…</span>');
 // Short human-friendly ID: 6 uppercase alphanumeric chars
 const shortId='RA-'+Math.random().toString(36).slice(2,8).toUpperCase();
-const peer=new Peer(shortId,{debug:0});
+const peer=new Peer(shortId,MP_CFG);
 MP.peer=peer; MP.mode='host'; MP.myTeam=TP;
 const showCode=()=>{
 const id=peer.id;
@@ -2303,8 +2310,8 @@ setTimeout(()=>document.getElementById('mpCode')?.focus(),80);
 function mpJoin(){
 const code=(document.getElementById('mpCode')?.value||'').trim().toUpperCase();
 if(!code){showMsg('Enter the room code!');return;}
-mpLobby('<span style="color:#aaa;font-size:12px">Connecting…</span>');
-const peer=new Peer(undefined,{debug:0});
+mpLobby('<span style="color:#aaa;font-size:12px">Connecting… (keep this tab open)</span>');
+const peer=new Peer(undefined,MP_CFG);
 MP.peer=peer; MP.mode='client'; MP.myTeam=TE;
 peer.on('open',()=>{
 const conn=peer.connect(code,{reliable:true});
