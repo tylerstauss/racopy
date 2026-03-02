@@ -2262,10 +2262,20 @@ function mpLobby(html){const el=document.getElementById('mpLobby');el.style.disp
 
 function mpHost(){
 mpLobby('<span style="color:#aaa;font-size:12px">Creating room…</span>');
-const peer=new Peer(undefined,{debug:0});
+// Short human-friendly ID: 6 uppercase alphanumeric chars
+const shortId='RA-'+Math.random().toString(36).slice(2,8).toUpperCase();
+const peer=new Peer(shortId,{debug:0});
 MP.peer=peer; MP.mode='host'; MP.myTeam=TP;
-peer.on('open',id=>{
-mpLobby(`<div style="color:#ffaaaa;font-size:11px;letter-spacing:1px;margin-bottom:4px">ROOM CODE</div><div style="font-family:Orbitron,sans-serif;font-size:18px;color:#fff;letter-spacing:3px;padding:8px 14px;border:1px solid #cc0000;background:#1a0000;margin:4px auto 6px;display:inline-block;word-break:break-all;cursor:pointer;user-select:all" title="Click to copy">${id}</div><br><button class="start-btn" style="padding:8px 22px;font-size:12px;margin-top:2px" id="mpCopyBtn" onclick="navigator.clipboard.writeText('${id}').then(()=>{this.textContent='✅ Copied!';setTimeout(()=>this.textContent='📋 Copy Code',2000)},()=>{document.getElementById('mpFallback').select();document.execCommand('copy');})">📋 Copy Code</button><input id="mpFallback" value="${id}" readonly style="opacity:0;position:absolute;pointer-events:none;width:1px"><div style="color:#ff8888;font-size:11px;margin-top:8px">⏳ Waiting for opponent…</div>`);
+const showCode=()=>{
+const id=peer.id;
+document.getElementById('mpLobby').innerHTML=`<div style="color:#ffaaaa;font-size:11px;letter-spacing:1px;margin-bottom:4px">ROOM CODE</div><div style="font-family:Orbitron,sans-serif;font-size:22px;color:#fff;letter-spacing:4px;padding:8px 18px;border:1px solid #cc0000;background:#1a0000;margin:4px auto 6px;display:inline-block;cursor:pointer;user-select:all" title="Click to copy">${id}</div><br><button class="start-btn" style="padding:8px 22px;font-size:12px;margin-top:2px" id="mpCopyBtn" onclick="navigator.clipboard.writeText('${id}').then(()=>{this.textContent='✅ Copied!';setTimeout(()=>this.textContent='📋 Copy Code',2000)},()=>{document.getElementById('mpFallback').select();document.execCommand('copy')})">📋 Copy Code</button><input id="mpFallback" value="${id}" readonly style="opacity:0;position:absolute;pointer-events:none;width:1px"><div style="color:#ff8888;font-size:11px;margin-top:8px" id="mpWaitTxt">⏳ Waiting for opponent…</div>`;
+};
+peer.on('open',showCode);
+// Keep peer registered on the signaling server — reconnect if dropped
+peer.on('disconnected',()=>{
+const wt=document.getElementById('mpWaitTxt');
+if(wt)wt.textContent='🔄 Reconnecting…';
+setTimeout(()=>{if(!MP.connected)peer.reconnect();},1000);
 });
 peer.on('connection',conn=>{
 MP.conn=conn; MP.connected=true;
@@ -2275,16 +2285,23 @@ startGame();
 setTimeout(()=>{if(MP.conn)MP.conn.send(JSON.stringify({t:'init',map:G.map,e:mpSerEnt(),cr:G.credits,po:G.power,pu2:G.pu,ti:0}));},300);
 document.getElementById('mpLobby').style.display='none';
 });
-peer.on('error',err=>mpLobby(`<span style="color:#f44;font-size:12px">Error: ${err.type} — try refreshing</span>`));
+peer.on('error',err=>{
+if(err.type==='unavailable-id'){
+// ID collision (very rare) — retry with a new one
+MP.peer=null; peer.destroy(); mpHost();
+} else {
+mpLobby(`<span style="color:#f44;font-size:12px">Error: ${err.type} — try refreshing</span>`);
+}
+});
 }
 
 function mpShowJoin(){
-mpLobby(`<input id="mpCode" placeholder="Paste room code here" style="background:#1a0000;border:1px solid #cc0000;color:#fff;padding:8px 12px;font-family:Share Tech Mono,monospace;font-size:13px;letter-spacing:1px;width:260px;text-align:center;" maxlength="64"><br><button class="start-btn" style="margin-top:10px;padding:10px 24px;font-size:12px" onclick="mpJoin()">CONNECT</button>`);
+mpLobby(`<input id="mpCode" placeholder="e.g. RA-AB3K9P" style="background:#1a0000;border:1px solid #cc0000;color:#fff;padding:8px 12px;font-family:Orbitron,monospace;font-size:15px;letter-spacing:2px;width:220px;text-align:center;text-transform:uppercase;" maxlength="12" oninput="this.value=this.value.toUpperCase()"><br><button class="start-btn" style="margin-top:10px;padding:10px 24px;font-size:12px" onclick="mpJoin()">CONNECT</button>`);
 setTimeout(()=>document.getElementById('mpCode')?.focus(),80);
 }
 
 function mpJoin(){
-const code=(document.getElementById('mpCode')?.value||'').trim();
+const code=(document.getElementById('mpCode')?.value||'').trim().toUpperCase();
 if(!code){showMsg('Enter the room code!');return;}
 mpLobby('<span style="color:#aaa;font-size:12px">Connecting…</span>');
 const peer=new Peer(undefined,{debug:0});
