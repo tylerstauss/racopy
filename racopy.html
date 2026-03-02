@@ -449,7 +449,7 @@ Power: {name:'Power', icon:'⚡', cost:300, w:2,h:2,hp:400,power:100,pu:0, req:'
 Refinery:{name:'Refinery', icon:'⛏️',cost:2000, w:3,h:2,hp:600,power:0, pu:30, req:'Power', range:0,dmg:0,fr:0},
 Barracks:{name:'Barracks', icon:'🏠',cost:500, w:2,h:2,hp:400,power:0, pu:10, req:'Power', range:0,dmg:0,fr:0},
 WarFac: {name:'War Fac.', icon:'🏗️',cost:2000, w:3,h:2,hp:600,power:0, pu:20, req:'Barracks',range:0,dmg:0,fr:0},
-Turret: {name:'Turret', icon:'🗼',cost:600, w:1,h:1,hp:300,power:0, pu:15, req:'Power', range:6,dmg:25,fr:1.5},
+Turret: {name:'Turret', icon:'🗼',cost:600, w:1,h:1,hp:700,power:0, pu:15, req:'Power', range:9,dmg:50,fr:2.0},
 Radar: {name:'Radar', icon:'📡',cost:1000, w:2,h:2,hp:300,power:0, pu:20, req:'Power', range:0,dmg:0,fr:0},
 };
 // Build times computed from cost
@@ -554,6 +554,19 @@ for(const e of G.entities){if(!e.isBuilding)continue;const ed=BD[e.type];if(x>=e
 return true;
 }
 
+// ─── POWER / BUILD RATE ───────────────────────────────
+// Returns build speed multiplier for a team.
+// Power plant can always build (at 0.5x in deficit).
+// Everything else is paused (0) if power < usage.
+// Surplus power speeds builds up to 2x.
+function buildRate(team,type=''){
+const pow=G.power[team]||0,use=G.pu[team]||0;
+if(use===0)return 1;
+if(pow<use)return type==='Power'?0.5:0;
+return Math.min(2,pow/use);
+}
+function hasPower(team){return (G.power[team]||0)>=(G.pu[team]||0);}
+
 // ─── UPDATE ───────────────────────────────────────────
 let lastTime=0;
 function gameLoop(ts){
@@ -571,11 +584,17 @@ if(e.hp<=0)continue;
 
 // Construction progress for placed buildings
 if(e.isBuilding&&!e.complete){
-e.constructProg+=dt/e.constructTime;
+e.constructProg+=dt/e.constructTime*buildRate(e.team,e.type);
 if(e.constructProg>=1){
 e.constructProg=1; e.complete=true; e.hp=e.maxHp;
 upPow();
-if(e.team===TP) showMsg(`${BD[e.type].name} construction complete!`);
+if(e.team===MP.myTeam) showMsg(`${BD[e.type].name} construction complete!`);
+// Refinery comes with a free Harvester
+if(e.type==='Refinery'){
+const hv=mkUnit('Harvester',e.team,(e.tx+BD[e.type].w)*TILE,e.ty*TILE+TILE);
+hv.ref=e; hv.state='findOre';
+if(e.team===MP.myTeam) showMsg('⛏️ New Ore Truck deployed!');
+}
 }
 continue; // don't do anything else while building
 }
@@ -587,7 +606,7 @@ if(e.isBuilding&&e.complete){
 if(e.range>0&&e.dmg>0){e.at-=dt;if(e.at<=0){const t=findEnemy(e.x,e.y,e.range*TILE,e.team);if(t){dealDmg(t,e.dmg);spawnProj(e.x,e.y,t.x,t.y,e.team);e.at=1/e.fr;}}}
 // Unit build queue
 if(e.bq&&e.bq.length>0){
-const item=e.bq[0]; item.prog+=dt;
+const item=e.bq[0]; item.prog+=dt*buildRate(e.team);
 if(item.prog>=item.bt){
 e.bq.shift();
 const u=mkUnit(item.type,e.team,e.tx*TILE+e.so.x,e.ty*TILE+e.so.y);
@@ -1714,7 +1733,9 @@ return ex>=cam.x-100&&ex<=cam.x+canvas.width/z+100&&ey>=cam.y-100&&ey<=cam.y+can
 function updateUI(){
 const mt=MP.myTeam;
 document.getElementById('credits').textContent=~~G.credits[mt];
-document.getElementById('powerTxt').textContent=`⚡${G.power[mt]}/${G.pu[mt]}`;
+const rate=buildRate(mt);
+const rateTxt=rate===0?' ⛔':rate<1?` ${~~(rate*100)}%`:rate>1?` ${~~(rate*100)}%`:'';
+document.getElementById('powerTxt').textContent=`⚡${G.power[mt]}/${G.pu[mt]}${rateTxt}`;
 document.getElementById('powerDot').className=G.pu[mt]>G.power[mt]?'low':'';
 const ms=~~(G.time/60),ss=~~(G.time%60);
 document.getElementById('gameTime').textContent=`${ms}:${ss.toString().padStart(2,'0')}`;
@@ -1785,7 +1806,8 @@ const mt=MP.myTeam;
 const canAfford=G.credits[mt]>=cost;
 const reqLocked=item.d.req2&&!item.d.req2.every(r=>G.entities.some(e=>e.isBuilding&&e.type===r&&e.team===mt&&e.complete));
 const reqBldg=item.d.req&&!G.entities.some(e=>e.isBuilding&&e.type===item.d.req&&e.team===mt&&e.complete);
-const disabled=!canAfford||reqLocked||reqBldg;
+const noPower=item.type!=='Power'&&!hasPower(mt);
+const disabled=!canAfford||reqLocked||reqBldg||noPower;
 const isUnit=item.d.cat!==undefined;
 
 const btn=document.createElement('div');
@@ -1809,7 +1831,7 @@ btn.innerHTML=`${lockIcon}<span style="font-size:22px">${item.d.icon}</span><spa
 if(!disabled){
 btn.onclick=isUnit?()=>qUnitFrom(item.type,bldg):()=>{startPlace(item.type);};
 } else {
-btn.onclick=()=>showMsg(reqLocked?`Requires ${item.d.req2.join(' + ')}!`:reqBldg?`Requires ${item.d.req}!`:'Not enough credits!');
+btn.onclick=()=>showMsg(noPower?'⚡ Need more power!':reqLocked?`Requires ${item.d.req2.join(' + ')}!`:reqBldg?`Requires ${item.d.req}!`:'Not enough credits!');
 }
 bar.appendChild(btn);
 }
@@ -1831,6 +1853,7 @@ showMsg(`Training ${d.name}… (${d.bt}s)`);
 return;
 }
 const mt=MP.myTeam;
+if(!hasPower(mt)){showMsg('⚡ Need more power!');return;}
 if(G.credits[mt]<d.cost){showMsg('Not enough credits!');return;}
 if(d.req2){for(const r of d.req2){if(!G.entities.some(e=>e.isBuilding&&e.type===r&&e.team===mt&&e.complete)){showMsg(`Requires ${d.req2.join(' + ')}!`);return;}}}
 G.credits[mt]-=d.cost;
@@ -1867,6 +1890,7 @@ const d=BD[type];
 const mt=MP.myTeam;
 if(d.req&&!G.entities.some(e=>e.isBuilding&&e.type===d.req&&e.team===mt&&e.complete)){showMsg(`Requires ${d.req}!`);return;}
 if(G.credits[mt]<d.cost&&MP.mode!=='client'){showMsg('Not enough credits!');return;}
+if(type!=='Power'&&MP.mode!=='client'&&!hasPower(mt)){showMsg('⚡ Need more power! Build a Power Plant.');return;}
 G.placingBuilding=type; touchMode='place'; closeBuild();
 showMsg(`Tap to place ${d.name} (${d.bt}s to build)`);
 showMI(`📍 Placing ${d.icon} ${d.name}`);
@@ -1879,6 +1903,7 @@ MP.conn.send(JSON.stringify({t:'qunit',unit:type}));
 showMsg(`Training ${d.name}… (${d.bt}s)`);
 return;
 }
+if(!hasPower(mt)){showMsg('⚡ Need more power!');return;}
 if(G.credits[mt]<d.cost){showMsg('Not enough credits!');return;}
 if(d.req2){
 for(const r of d.req2){if(!G.entities.some(e=>e.isBuilding&&e.type===r&&e.team===mt&&e.complete)){showMsg(`Repairman requires Barracks + Radar!`);return;}}
