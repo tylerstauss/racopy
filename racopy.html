@@ -2265,7 +2265,7 @@ mpLobby('<span style="color:#aaa;font-size:12px">Creating room…</span>');
 const peer=new Peer(undefined,{debug:0});
 MP.peer=peer; MP.mode='host'; MP.myTeam=TP;
 peer.on('open',id=>{
-mpLobby(`<div style="color:#ffaaaa;font-size:11px;letter-spacing:1px">ROOM CODE</div><div style="font-family:Orbitron,sans-serif;font-size:20px;color:#fff;letter-spacing:4px;padding:6px 16px;border:1px solid #cc0000;background:#1a0000;margin:6px auto;display:inline-block;word-break:break-all">${id}</div><div style="color:#888;font-size:10px;margin-top:4px">Share this code with your opponent</div><div style="color:#ff8888;font-size:11px;margin-top:6px">⏳ Waiting for opponent…</div>`);
+mpLobby(`<div style="color:#ffaaaa;font-size:11px;letter-spacing:1px;margin-bottom:4px">ROOM CODE</div><div style="font-family:Orbitron,sans-serif;font-size:18px;color:#fff;letter-spacing:3px;padding:8px 14px;border:1px solid #cc0000;background:#1a0000;margin:4px auto 6px;display:inline-block;word-break:break-all;cursor:pointer;user-select:all" title="Click to copy">${id}</div><br><button class="start-btn" style="padding:8px 22px;font-size:12px;margin-top:2px" id="mpCopyBtn" onclick="navigator.clipboard.writeText('${id}').then(()=>{this.textContent='✅ Copied!';setTimeout(()=>this.textContent='📋 Copy Code',2000)},()=>{document.getElementById('mpFallback').select();document.execCommand('copy');})">📋 Copy Code</button><input id="mpFallback" value="${id}" readonly style="opacity:0;position:absolute;pointer-events:none;width:1px"><div style="color:#ff8888;font-size:11px;margin-top:8px">⏳ Waiting for opponent…</div>`);
 });
 peer.on('connection',conn=>{
 MP.conn=conn; MP.connected=true;
