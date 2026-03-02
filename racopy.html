@@ -78,9 +78,32 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 #overlay.defeat h2{color:var(--rb);text-shadow:0 0 40px #ff000088;}
 #overlay button{padding:12px 30px;font-family:'Orbitron',sans-serif;font-size:14px;background:transparent;border:2px solid currentColor;cursor:pointer;}
 #overlay.victory button{color:var(--grn);}#overlay.defeat button{color:#ff4444;}
+/* INFO BUTTON */
+#infoBtn{background:none;border:1px solid #440000;color:#ff8888;font-size:15px;width:30px;height:30px;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;margin-left:6px;}
+#infoBtn:active{background:#330000;}
+/* INFO MODAL */
+#infoModal{position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:800;display:none;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+#infoModal.open{display:block;}
+.info-inner{max-width:520px;margin:0 auto;padding:18px 16px 48px;}
+.info-close{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid #330000;padding-bottom:12px;}
+.info-close h2{font-family:'Orbitron',sans-serif;font-size:14px;color:#ff4444;letter-spacing:3px;}
+.info-close button{background:none;border:1px solid #660000;color:#ff8888;padding:5px 14px;font-family:'Share Tech Mono',monospace;font-size:12px;cursor:pointer;letter-spacing:1px;}
+.info-section{margin-bottom:20px;}
+.info-section h3{font-family:'Orbitron',sans-serif;font-size:10px;color:#ff6666;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #2a0000;padding-bottom:6px;margin-bottom:10px;}
+.info-row{display:flex;gap:10px;align-items:flex-start;margin-bottom:8px;font-size:12px;line-height:1.5;color:#aaa;}
+.info-key{background:#1a0000;border:1px solid #440000;color:#ffaa88;padding:2px 9px;border-radius:3px;font-size:11px;white-space:nowrap;flex-shrink:0;font-family:'Share Tech Mono',monospace;}
+.info-tabs{display:flex;gap:0;margin-bottom:16px;}
+.info-tab{flex:1;padding:8px;font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:1px;background:#0a0000;border:1px solid #330000;color:#664444;cursor:pointer;text-align:center;}
+.info-tab.active{background:#1a0000;border-color:#cc0000;color:#ff8888;}
+.info-pane{display:none;}.info-pane.active{display:block;}
 /* Under-construction scaffold on building */
 .bld-scaffold{}
-@media(max-width:600px){#touchControls{display:flex;}#minimapWrap{opacity:0.85;}}
+@media(max-width:600px){
+  #touchControls{display:flex;left:12px;right:auto;}
+  #minimapWrap{opacity:0.85;}
+  :root{--bbh:80px;}
+  .unit-portrait{width:64px;height:64px;min-width:64px;}
+}
 </style>
 </head>
 <body>
@@ -112,6 +135,7 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 <div class="res"><div id="powerDot"></div><span id="powerTxt">⚡0/0</span></div>
 <span id="gameTime" class="res">0:00</span>
 <span id="mpTag" style="display:none;font-size:10px;padding:2px 7px;border-radius:3px;font-family:Orbitron,sans-serif;letter-spacing:1px;"></span>
+<button id="infoBtn" onclick="openInfo()" title="How to play">ℹ</button>
 </div>
 <canvas id="gameCanvas"></canvas>
 <div id="bottomBar"><span id="noSel">Tap a unit or building to select</span></div>
@@ -143,6 +167,117 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 <h2 id="overlayText">VICTORY</h2>
 <button onclick="location.reload()">PLAY AGAIN</button>
 </div>
+
+<div id="infoModal">
+<div class="info-inner">
+<div class="info-close">
+<h2>⚔ HOW TO PLAY</h2>
+<button onclick="closeInfo()">✕ CLOSE</button>
+</div>
+<div class="info-tabs">
+<div class="info-tab active" onclick="switchTab('mobile')">📱 Mobile</div>
+<div class="info-tab" onclick="switchTab('desktop')">🖥 Desktop</div>
+<div class="info-tab" onclick="switchTab('game')">🏰 Game Guide</div>
+</div>
+
+<div id="tab-mobile" class="info-pane active">
+<div class="info-section">
+<h3>Selecting Units &amp; Buildings</h3>
+<div class="info-row"><span class="info-key">Tap</span><span>Select a unit or building. Tap it again to deselect.</span></div>
+<div class="info-row"><span class="info-key">Drag from unit</span><span>Box-select multiple units at once.</span></div>
+<div class="info-row"><span class="info-key">Tap building</span><span>Opens its production panel in the bar at the bottom.</span></div>
+</div>
+<div class="info-section">
+<h3>Giving Orders</h3>
+<div class="info-row"><span class="info-key">Double-tap ground</span><span>Move selected units to that location.</span></div>
+<div class="info-row"><span class="info-key">Double-tap enemy</span><span>Attack that enemy unit or building.</span></div>
+<div class="info-row"><span class="info-key">Long-press enemy</span><span>Attack order (alternative to double-tap).</span></div>
+<div class="info-row"><span class="info-key">⚔️ button</span><span>Switch to Attack mode — next tap targets an enemy.</span></div>
+<div class="info-row"><span class="info-key">🏃 button</span><span>Switch to Move mode — next tap is a move destination.</span></div>
+</div>
+<div class="info-section">
+<h3>Camera</h3>
+<div class="info-row"><span class="info-key">Drag empty ground</span><span>Pan the camera.</span></div>
+<div class="info-row"><span class="info-key">Pinch</span><span>Zoom in / out.</span></div>
+<div class="info-row"><span class="info-key">Tap minimap</span><span>Jump camera to that map location.</span></div>
+</div>
+<div class="info-section">
+<h3>Building &amp; Production</h3>
+<div class="info-row"><span class="info-key">Tap a building</span><span>See what it produces. Tap an item to queue it.</span></div>
+<div class="info-row"><span class="info-key">⚙️ button</span><span>Full build menu — all structures, infantry, vehicles.</span></div>
+<div class="info-row"><span class="info-key">Place building</span><span>After selecting from menu, tap the map to place it.</span></div>
+</div>
+</div>
+
+<div id="tab-desktop" class="info-pane">
+<div class="info-section">
+<h3>Selecting Units &amp; Buildings</h3>
+<div class="info-row"><span class="info-key">Click</span><span>Select a unit or building.</span></div>
+<div class="info-row"><span class="info-key">Click + Drag</span><span>Draw a box to select multiple units at once.</span></div>
+<div class="info-row"><span class="info-key">Shift + Click</span><span>Add or remove from current selection.</span></div>
+<div class="info-row"><span class="info-key">Esc</span><span>Deselect everything.</span></div>
+<div class="info-row"><span class="info-key">Click building</span><span>Opens its production panel in the bottom bar.</span></div>
+</div>
+<div class="info-section">
+<h3>Giving Orders</h3>
+<div class="info-row"><span class="info-key">Right-click ground</span><span>Move selected units to that location.</span></div>
+<div class="info-row"><span class="info-key">Right-click enemy</span><span>Attack that unit or building.</span></div>
+</div>
+<div class="info-section">
+<h3>Camera</h3>
+<div class="info-row"><span class="info-key">Mouse to edge</span><span>Scroll the camera in that direction.</span></div>
+<div class="info-row"><span class="info-key">Arrow keys / WASD</span><span>Scroll the camera.</span></div>
+<div class="info-row"><span class="info-key">Scroll wheel</span><span>Zoom in / out.</span></div>
+<div class="info-row"><span class="info-key">Click minimap</span><span>Jump camera to that location.</span></div>
+</div>
+<div class="info-section">
+<h3>Building &amp; Production</h3>
+<div class="info-row"><span class="info-key">Click a building</span><span>Shows what it can produce in the bottom bar.</span></div>
+<div class="info-row"><span class="info-key">⚙️ button</span><span>Full build menu — all structures, infantry, vehicles.</span></div>
+<div class="info-row"><span class="info-key">Place building</span><span>Click to place after selecting from the menu. Right-click to cancel.</span></div>
+</div>
+</div>
+
+<div id="tab-game" class="info-pane">
+<div class="info-section">
+<h3>Objective</h3>
+<div class="info-row"><span class="info-key">Win</span><span>Destroy ALL of your opponent's buildings. You are BLUE, enemy is RED (or vice versa in multiplayer).</span></div>
+</div>
+<div class="info-section">
+<h3>Economy</h3>
+<div class="info-row"><span class="info-key">💰 Credits</span><span>Spent on all units and buildings. Earned by Ore Trucks mining yellow ore patches.</span></div>
+<div class="info-row"><span class="info-key">⛏️ Refinery</span><span>Ore Trucks deposit ore here. Building one spawns a bonus Ore Truck automatically.</span></div>
+<div class="info-row"><span class="info-key">⚡ Power</span><span>Power Plants generate power. Power usage (shown as ⚡gen/used) must stay positive or production pauses. More surplus = faster builds (up to 2×).</span></div>
+</div>
+<div class="info-section">
+<h3>Buildings</h3>
+<div class="info-row"><span class="info-key">🏭 Con. Yard</span><span>Build all structures from here. Required first building.</span></div>
+<div class="info-row"><span class="info-key">⚡ Power Plant</span><span>Generates 100 power. Always build these early.</span></div>
+<div class="info-row"><span class="info-key">🏠 Barracks</span><span>Trains infantry units (GI, Sniper, War Dog, Repairman).</span></div>
+<div class="info-row"><span class="info-key">🏗️ War Factory</span><span>Builds vehicles (Ore Truck, Grizzly Tank, IFV).</span></div>
+<div class="info-row"><span class="info-key">🗼 Turret</span><span>Auto-attacks nearby enemies. Strong base defense.</span></div>
+<div class="info-row"><span class="info-key">📡 Radar</span><span>Required to train Repairman.</span></div>
+</div>
+<div class="info-section">
+<h3>Units</h3>
+<div class="info-row"><span class="info-key">🪖 GI</span><span>Basic infantry. Cheap and fast to train.</span></div>
+<div class="info-row"><span class="info-key">🎯 Sniper</span><span>Long range, high damage, fragile.</span></div>
+<div class="info-row"><span class="info-key">🐕 War Dog</span><span>Very fast, melee only.</span></div>
+<div class="info-row"><span class="info-key">🔧 Repairman</span><span>Repairs any friendly building to full HP. Requires Barracks + Radar.</span></div>
+<div class="info-row"><span class="info-key">🛡️ Grizzly Tank</span><span>Heavy armour, high damage. Main battle unit.</span></div>
+<div class="info-row"><span class="info-key">🚗 IFV</span><span>Fast attack vehicle. Good all-rounder.</span></div>
+</div>
+<div class="info-section">
+<h3>Tips</h3>
+<div class="info-row"><span class="info-key">⚡</span><span>Build at least 2 Power Plants early — surplus power speeds up all production.</span></div>
+<div class="info-row"><span class="info-key">⛏️</span><span>Build a second Refinery when you can afford it — doubles your income.</span></div>
+<div class="info-row"><span class="info-key">🗼</span><span>Ring your base with Turrets before attacking. They have long range and high fire rate.</span></div>
+<div class="info-row"><span class="info-key">🔧</span><span>Keep a Repairman near your base — one Repairman can keep Turrets alive indefinitely.</span></div>
+</div>
+</div>
+
+</div><!-- info-inner -->
+</div><!-- infoModal -->
 
 <script>
 // ═══════════════════════════════════════════════════════
@@ -2461,6 +2596,28 @@ MP.mode='solo'; MP.myTeam=TP;
 if(MP.peer){try{MP.peer.destroy();}catch(_){} MP.peer=null; MP.conn=null;}
 startGame();
 }
+function openInfo(){document.getElementById('infoModal').classList.add('open');}
+function closeInfo(){document.getElementById('infoModal').classList.remove('open');}
+function switchTab(name){
+document.querySelectorAll('.info-tab').forEach((t,i)=>t.classList.toggle('active',['mobile','desktop','game'][i]===name));
+document.querySelectorAll('.info-pane').forEach(p=>p.classList.toggle('active',p.id==='tab-'+name));
+}
+// Close modal on backdrop click
+document.getElementById('infoModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeInfo();});
+// Scroll-wheel zoom
+canvas.addEventListener('wheel',e=>{
+e.preventDefault();
+const z=gz(),factor=e.deltaY<0?1.1:0.91;
+const nz=Math.max(0.4,Math.min(2.5,z*factor));
+// Zoom toward mouse position
+const rect=canvas.getBoundingClientRect();
+const mx=(e.clientX-rect.left)/z+G.camera.x;
+const my=(e.clientY-rect.top)/z+G.camera.y;
+G.camera.zoom=nz;
+G.camera.x=Math.max(0,Math.min(PW-canvas.width/nz,mx-( e.clientX-rect.left)/nz));
+G.camera.y=Math.max(0,Math.min(PH-canvas.height/nz,my-(e.clientY-rect.top)/nz));
+},{passive:false});
+
 function startGame(){
 document.getElementById('splash').style.display='none';
 initGame(); setupBuildPanel(); resizeCanvas();
