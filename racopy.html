@@ -918,9 +918,13 @@ if(h.ore>=h.maxOre){h.state='returnOre';const ref=G.entities.find(r=>r.type==='R
 else if(h.state==='returnOre'){
 movePath(h);
 const ref=G.entities.find(r=>r.type==='Refinery'&&r.team===h.team&&r.hp>0);
-if(!h.path||!h.path.length){
-if(ref&&dist(h,ref)<ref.w*2){G.credits[h.team]+=h.ore*15;h.ore=0;h.state='findOre';}
-else if(ref)h.path=fp(h.x,h.y,ref.x,ref.y);
+// Check proximity every frame — not just when path empties.
+// A* routes to the building center tile (impassable) so the fallback waypoint
+// can never be consumed; pushOutOfBldgs keeps the truck at the edge forever.
+if(ref&&dist(h,ref)<ref.w*2){
+G.credits[h.team]+=h.ore*15;h.ore=0;h.state='findOre';
+} else if(!h.path||!h.path.length){
+if(ref)h.path=fp(h.x,h.y,ref.x,ref.y);
 else{h.ore=0;h.state='idle';}
 }
 }
