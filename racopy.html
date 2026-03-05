@@ -2731,7 +2731,7 @@ function showMsg(text){const d=document.createElement('div');d.className='messag
 
 // ─── MULTIPLAYER ──────────────────────────────────────
 function mpLobby(html){const el=document.getElementById('mpLobby');el.style.display='block';el.innerHTML=html;}
-const MP_CFG={debug:0,config:{iceServers:[
+const MP_CFG={debug:2,config:{iceServers:[
 {urls:'stun:stun.l.google.com:19302'},
 {urls:'stun:stun1.l.google.com:19302'},
 {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
@@ -2743,27 +2743,43 @@ function mpHost(){
 mpLobby('<span style="color:#aaa;font-size:12px">Creating room…</span>');
 // Short human-friendly ID: 6 uppercase alphanumeric chars
 const shortId='RA-'+Math.random().toString(36).slice(2,8).toUpperCase();
+console.log('[MP] HOST: creating peer id='+shortId);
 const peer=new Peer(shortId,MP_CFG);
 MP.peer=peer; MP.mode='host'; MP.myTeam=TP;
+// Timeout: signaling server must respond within 12s
+const sigTimeout=setTimeout(()=>{
+if(!peer.id){
+console.error('[MP] HOST: signaling server timeout — peer.open never fired');
+mpLobby(`<span style="color:#f44;font-size:12px">Timeout: could not reach signaling server — try refreshing</span>`);
+}
+},12000);
 const showCode=()=>{
+clearTimeout(sigTimeout);
 const id=peer.id;
+console.log('[MP] HOST: signaling open, assigned id='+id);
 document.getElementById('mpLobby').innerHTML=`<div style="color:#ffaaaa;font-size:11px;letter-spacing:1px;margin-bottom:4px">ROOM CODE</div><div style="font-family:Orbitron,sans-serif;font-size:22px;color:#fff;letter-spacing:4px;padding:8px 18px;border:1px solid #cc0000;background:#1a0000;margin:4px auto 6px;display:inline-block;cursor:pointer;user-select:all" title="Click to copy">${id}</div><br><button class="start-btn" style="padding:8px 22px;font-size:12px;margin-top:2px" id="mpCopyBtn" onclick="navigator.clipboard.writeText('${id}').then(()=>{this.textContent='✅ Copied!';setTimeout(()=>this.textContent='📋 Copy Code',2000)},()=>{document.getElementById('mpFallback').select();document.execCommand('copy')})">📋 Copy Code</button><input id="mpFallback" value="${id}" readonly style="opacity:0;position:absolute;pointer-events:none;width:1px"><div style="color:#ff8888;font-size:11px;margin-top:8px" id="mpWaitTxt">⏳ Waiting for opponent…</div>`;
 };
 peer.on('open',showCode);
 // Keep peer registered on the signaling server — reconnect if dropped
 peer.on('disconnected',()=>{
+console.warn('[MP] HOST: signaling disconnected — attempting reconnect');
 const wt=document.getElementById('mpWaitTxt');
 if(wt)wt.textContent='🔄 Reconnecting…';
 setTimeout(()=>{if(!MP.connected)peer.reconnect();},1000);
 });
 peer.on('connection',conn=>{
+console.log('[MP] HOST: incoming connection from peer='+conn.peer);
 MP.conn=conn;
 const wt=document.getElementById('mpWaitTxt');
 if(wt)wt.textContent='🔗 Opponent found, establishing connection…';
 conn.on('open',()=>{
+console.log('[MP] HOST: conn.open — WebRTC channel established');
 MP.connected=true;
 conn.on('data',d=>mpHandleAction(JSON.parse(d)));
-conn.on('close',()=>{MP.connected=false;showMsg('⚠️ Opponent disconnected');});
+conn.on('close',()=>{
+console.warn('[MP] HOST: conn.close — opponent disconnected');
+MP.connected=false;showMsg('⚠️ Opponent disconnected');
+});
 // Show ready overlay on host side
 document.getElementById('mpLobby').style.display='none';
 const ro=document.getElementById('readyOverlay');
@@ -2771,9 +2787,13 @@ ro.style.display='flex';
 // Start ping timer
 setInterval(()=>{if(MP.conn&&MP.connected)try{MP.conn.send(JSON.stringify({t:'ping',ts:Date.now()}));}catch(_){}},2000);
 });
-conn.on('error',err=>showMsg('⚠️ Connection error: '+err.type));
+conn.on('error',err=>{
+console.error('[MP] HOST: conn error type='+err.type,err);
+showMsg('⚠️ Connection error: '+err.type);
+});
 });
 peer.on('error',err=>{
+console.error('[MP] HOST: peer error type='+err.type,err);
 if(err.type==='unavailable-id'){
 // ID collision (very rare) — retry with a new one
 MP.peer=null; peer.destroy(); mpHost();
@@ -2791,14 +2811,24 @@ setTimeout(()=>document.getElementById('mpCode')?.focus(),80);
 function mpJoin(){
 const code=(document.getElementById('mpCode')?.value||'').trim().toUpperCase();
 if(!code){showMsg('Enter the room code!');return;}
+console.log('[MP] JOIN: starting join for code='+code);
 mpLobby('<span style="color:#aaa;font-size:12px" id="mpStatus">1/3 Reaching signaling server…</span>');
 const peer=new Peer(undefined,MP_CFG);
 MP.peer=peer; MP.mode='client'; MP.myTeam=TE; MP._joinCode=code;
 let reconnectAttempts=0;
+// Timeout: signaling server must respond within 12s
+const sigTimeout=setTimeout(()=>{
+if(!peer.id){
+console.error('[MP] JOIN: signaling server timeout — peer.open never fired');
+mpLobby(`<span style="color:#f44;font-size:12px">Timeout: could not reach signaling server — try refreshing</span>`);
+}
+},12000);
 function doConnect(){
+console.log('[MP] JOIN: connecting to host code='+code+' attempt='+(reconnectAttempts+1));
 const conn=peer.connect(code,{reliable:true});
 MP.conn=conn;
 conn.on('open',()=>{
+console.log('[MP] JOIN: conn.open — WebRTC channel established');
 reconnectAttempts=0;
 // Show ready overlay
 document.getElementById('mpLobby').style.display='none';
@@ -2810,6 +2840,7 @@ ro.style.display='flex';
 conn.on('data',d=>{
 const msg=JSON.parse(d);
 if(msg.t==='init'){
+console.log('[MP] JOIN: received init — starting game');
 document.getElementById('splash').style.display='none';
 document.getElementById('readyOverlay').style.display='none';
 initGame();
@@ -2843,6 +2874,7 @@ try{MP.conn.send(JSON.stringify({t:'pong',ts:msg.ts}));}catch(_){}
 }
 });
 conn.on('close',()=>{
+console.warn('[MP] JOIN: conn.close reconnectAttempts='+reconnectAttempts);
 MP.connected=false;
 if(reconnectAttempts>=5){showMsg('⚠️ Could not reconnect');return;}
 // Show reconnect overlay
@@ -2853,12 +2885,20 @@ setTimeout(()=>{
 if(!MP.connected)doConnect();
 },3000);
 });
+conn.on('error',err=>{
+console.error('[MP] JOIN: conn error type='+err.type,err);
+});
 }
-peer.on('open',()=>{
+peer.on('open',(id)=>{
+clearTimeout(sigTimeout);
+console.log('[MP] JOIN: signaling open, my id='+id+', connecting to code='+code);
 document.getElementById('mpStatus').textContent='2/3 Finding host — keep tab open…';
 doConnect();
 });
-peer.on('error',err=>mpLobby(`<span style="color:#f44;font-size:12px">Error: ${err.type} — check the code and try again</span>`));
+peer.on('error',err=>{
+console.error('[MP] JOIN: peer error type='+err.type,err);
+mpLobby(`<span style="color:#f44;font-size:12px">Error: ${err.type} — check the code and try again</span>`);
+});
 }
 
 function sendReady(){
