@@ -799,8 +799,11 @@ return true;
 function buildRate(team,type=''){
 const pow=G.power[team]||0,use=G.pu[team]||0;
 if(use===0)return 1;
-if(pow<use)return type==='Power'?0.5:0;
-return Math.min(2,pow/use);
+const ratio=pow/use;
+if(ratio>=1)return Math.min(2,ratio);
+// In deficit: Power plants always build at ≥0.5x so the player can recover;
+// everything else scales down linearly to a 0.15x floor (never fully stops).
+return type==='Power'?Math.max(0.5,ratio):Math.max(0.15,ratio);
 }
 function hasPower(team){return (G.power[team]||0)>=(G.pu[team]||0);}
 
@@ -1653,8 +1656,11 @@ ctx.textAlign='center'; ctx.textBaseline='middle';
 ctx.fillText('QUEUED',x+w/2,y+h/2); ctx.textAlign='left'; ctx.textBaseline='alphabetic';
 ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(x,y+h+2,w,6);
 ctx.strokeStyle='#666'; ctx.lineWidth=1; ctx.strokeRect(x,y+h+2,w,6);
-return;
+return; // no further drawing needed — skip scaffold visuals
 }
+// Low-power indicator: amber tint when building at reduced speed
+const brate=buildRate(b.team,b.type);
+if(brate<1){ctx.fillStyle=`rgba(255,140,0,${0.18*(1-brate)})`;ctx.fillRect(x,y,w,h);}
 dropShadow(x,y,w,h,4,0.35);
 // Dirt / foundation base
 ctx.fillStyle='#5a4a30'; ctx.fillRect(x,y,w,h);
@@ -2246,11 +2252,15 @@ const btn=document.createElement('div');
 btn.className='unit-portrait';
 btn.style.cssText=`cursor:${disabled?'not-allowed':'pointer'};opacity:${disabled?0.4:1};border-color:${disabled?'#330000':'#660000'};`;
 
-// Progress bar if this unit is currently being trained (first in queue)
+// Progress bars for all queued items of this type
 let progBar='';
-if(isUnit&&bldg.bq&&bldg.bq[0]?.type===item.type){
-const p2=bldg.bq[0].prog/bldg.bq[0].bt;
-progBar=`<div class="hp-bar"><div class="hp-fill" style="width:${p2*100}%;background:#0099dd"></div></div>`;
+if(isUnit&&bldg.bq){
+const queued=bldg.bq.filter(q=>q.type===item.type);
+progBar=queued.map((q,i)=>{
+const pct=i===0&&bldg.bq[0].type===item.type?q.prog/q.bt:0;
+const col=i===0?'#0099dd':'#334455';
+return `<div class="hp-bar" style="margin-top:1px"><div class="hp-fill" style="width:${pct*100}%;background:${col}"></div></div>`;
+}).join('');
 }
 // Queue count badge
 const qcount=isUnit&&bldg.bq?bldg.bq.filter(q=>q.type===item.type).length:0;
