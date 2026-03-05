@@ -2781,6 +2781,7 @@ console.warn('[MP] HOST: conn.close — opponent disconnected');
 MP.connected=false;showMsg('⚠️ Opponent disconnected');
 });
 // Show ready overlay on host side
+document.getElementById('splash').style.display='none';
 document.getElementById('mpLobby').style.display='none';
 const ro=document.getElementById('readyOverlay');
 ro.style.display='flex';
@@ -2829,8 +2830,10 @@ const conn=peer.connect(code,{reliable:true});
 MP.conn=conn;
 conn.on('open',()=>{
 console.log('[MP] JOIN: conn.open — WebRTC channel established');
+MP.connected=true;
 reconnectAttempts=0;
 // Show ready overlay
+document.getElementById('splash').style.display='none';
 document.getElementById('mpLobby').style.display='none';
 const recon=document.getElementById('mpReconOverlay');
 if(recon)recon.remove();
