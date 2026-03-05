@@ -771,6 +771,14 @@ if(t===T_DEEP||t===T_SHALLOW||t===T_ROCK)return false;
 for(const e of G.entities){if(!e.isBuilding||!e.complete)continue;const d=BD[e.type];if(tx>=e.tx&&tx<e.tx+d.w&&ty>=e.ty&&ty<e.ty+d.h)return false;}
 return true;
 }
+// Returns a passable world-pixel point adjacent to building b (for pathfinding TO a building)
+function nearBldgPt(b){
+const d=BD[b.type],pts=[];
+for(let i=0;i<d.w;i++){pts.push([b.tx+i,b.ty+d.h]);pts.push([b.tx+i,b.ty-1]);}
+for(let i=0;i<d.h;i++){pts.push([b.tx+d.w,b.ty+i]);pts.push([b.tx-1,b.ty+i]);}
+for(const[tx,ty]of pts)if(tx>=0&&tx<MAP_W&&ty>=0&&ty<MAP_H&&pass(tx,ty))return{x:tx*TILE+TILE/2,y:ty*TILE+TILE/2};
+return{x:b.x,y:b.y};
+}
 function canPlace(type,tx,ty,team){
 const d=BD[type];
 for(let dy=0;dy<d.h;dy++)for(let dx=0;dx<d.w;dx++){
@@ -809,11 +817,16 @@ if(MP.mode==='host'&&MP.connected){MP.stTimer-=dt;if(MP.stTimer<=0){MP.stTimer=0
 }
 
 function update(dt){
+// Only one building constructs per team at a time — find the first incomplete per team
+const activeBuildId={};
+for(const e of G.entities){if(e.isBuilding&&!e.complete&&e.hp>0&&!activeBuildId[e.team])activeBuildId[e.team]=e.id;}
+
 for(const e of G.entities){
 if(e.hp<=0)continue;
 
 // Construction progress for placed buildings
 if(e.isBuilding&&!e.complete){
+if(activeBuildId[e.team]===e.id){
 e.constructProg+=dt/e.constructTime*buildRate(e.team,e.type);
 if(e.constructProg>=1){
 e.constructProg=1; e.complete=true; e.hp=e.maxHp;
@@ -824,6 +837,7 @@ if(e.type==='Refinery'){
 const hv=mkUnit('Harvester',e.team,(e.tx+BD[e.type].w)*TILE,e.ty*TILE+TILE);
 hv.ref=e; hv.state='findOre';
 if(e.team===MP.myTeam) showMsg('⛏️ New Ore Truck deployed!');
+}
 }
 }
 continue; // don't do anything else while building
@@ -911,20 +925,17 @@ const tile=G.map[ty]?.[tx2];
 if(tile&&tile.type===T_ORE&&tile.ore>0){
 const a=Math.min(10,tile.ore,h.maxOre-h.ore);tile.ore-=a;h.ore+=a;
 if(tile.ore<=0){tile.type=T_DIRT;terrainCacheDirty=true;}
-if(h.ore>=h.maxOre){h.state='returnOre';const ref=G.entities.find(r=>r.type==='Refinery'&&r.team===h.team&&r.hp>0);if(ref)h.path=fp(h.x,h.y,ref.x,ref.y);}
+if(h.ore>=h.maxOre){h.state='returnOre';const ref=G.entities.find(r=>r.type==='Refinery'&&r.team===h.team&&r.hp>0);if(ref){const pt=nearBldgPt(ref);h.path=fp(h.x,h.y,pt.x,pt.y);}}
 } else h.state='findOre';
 }
 }
 else if(h.state==='returnOre'){
 movePath(h);
 const ref=G.entities.find(r=>r.type==='Refinery'&&r.team===h.team&&r.hp>0);
-// Check proximity every frame — not just when path empties.
-// A* routes to the building center tile (impassable) so the fallback waypoint
-// can never be consumed; pushOutOfBldgs keeps the truck at the edge forever.
-if(ref&&dist(h,ref)<ref.w*2){
-G.credits[h.team]+=h.ore*15;h.ore=0;h.state='findOre';
-} else if(!h.path||!h.path.length){
-if(ref)h.path=fp(h.x,h.y,ref.x,ref.y);
+if(!h.path||!h.path.length){
+// nearBldgPt routes A* to an adjacent passable tile so the path actually completes
+if(ref&&dist(h,ref)<TILE*4){G.credits[h.team]+=h.ore*15;h.ore=0;h.state='findOre';}
+else if(ref){const pt=nearBldgPt(ref);h.path=fp(h.x,h.y,pt.x,pt.y);}
 else{h.ore=0;h.state='idle';}
 }
 }
@@ -1632,6 +1643,18 @@ function drawUnderConstruction(b){
 const d=BD[b.type], p=TPAL[b.team];
 const x=b.tx*TILE, y=b.ty*TILE, w=d.w*TILE, h=d.h*TILE;
 const pct=b.constructProg;
+// Show queued (waiting) state when another building is ahead in the queue
+if(pct<0.005){
+ctx.fillStyle='#2a1a00'; ctx.fillRect(x,y,w,h);
+ctx.strokeStyle='#663300'; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
+ctx.strokeRect(x+1,y+1,w-2,h-2); ctx.setLineDash([]);
+ctx.fillStyle='#ff8800'; ctx.font=`bold ${Math.min(11,w/4)}px Orbitron,sans-serif`;
+ctx.textAlign='center'; ctx.textBaseline='middle';
+ctx.fillText('QUEUED',x+w/2,y+h/2); ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(x,y+h+2,w,6);
+ctx.strokeStyle='#666'; ctx.lineWidth=1; ctx.strokeRect(x,y+h+2,w,6);
+return;
+}
 dropShadow(x,y,w,h,4,0.35);
 // Dirt / foundation base
 ctx.fillStyle='#5a4a30'; ctx.fillRect(x,y,w,h);
@@ -2168,7 +2191,7 @@ const d=sel.isBuilding?BD[sel.type]:UD[sel.type], pct=sel.hp/sel.maxHp;
 const div=document.createElement('div');
 div.className='unit-portrait sel';
 let extra='';
-if(sel.isBuilding&&!sel.complete) extra=`<span style="font-size:8px;color:#ffaa00">${~~(sel.constructProg*100)}%</span>`;
+if(sel.isBuilding&&!sel.complete) extra=`<span style="font-size:8px;color:${sel.constructProg<0.005?'#ff8800':'#ffaa00'}">${sel.constructProg<0.005?'⏳':~~(sel.constructProg*100)+'%'}</span>`;
 else if(sel.isBuilding&&sel.bq&&sel.bq.length>0) extra=`<span style="font-size:8px;color:#00ff41">▶${sel.bq.length}</span>`;
 div.innerHTML=`<span>${d.icon}</span><span class="uname">${d.name}</span>${extra}<div class="hp-bar"><div class="hp-fill ${pct<.33?'low':pct<.66?'mid':''}" style="width:${pct*100}%"></div></div>`;
 bar.appendChild(div);
@@ -2318,8 +2341,10 @@ if(d.req2){
 for(const r of d.req2){if(!G.entities.some(e=>e.isBuilding&&e.type===r&&e.team===mt&&e.complete)){showMsg(`Repairman requires Barracks + Radar!`);return;}}
 }
 const bt=d.cat==='infantry'?'Barracks':'WarFac';
-const b=G.entities.find(e=>e.isBuilding&&e.type===bt&&e.team===mt&&e.complete);
-if(!b){showMsg(`Need ${bt}!`);return;}
+const bldgs=G.entities.filter(e=>e.isBuilding&&e.type===bt&&e.team===mt&&e.complete);
+if(!bldgs.length){showMsg(`Need ${bt}!`);return;}
+// Load-balance: pick the building with the shortest queue
+const b=bldgs.reduce((a,c)=>((c.bq||[]).length<(a.bq||[]).length?c:a));
 G.credits[mt]-=d.cost;
 if(!b.bq)b.bq=[];
 b.bq.push({type,prog:0,bt:d.bt});
