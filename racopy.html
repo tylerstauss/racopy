@@ -966,7 +966,29 @@ else{u.path=[];t.hp=Math.min(t.maxHp,t.hp+80*dt);
 if(Math.random()<0.3)G.particles.push({x:t.x+(Math.random()-.5)*t.w*.8,y:t.y+(Math.random()-.5)*t.h*.8,vx:(Math.random()-.5)*30,vy:-Math.random()*40-10,life:.4+Math.random()*.3,color:Math.random()>.5?'#00ff88':'#44ffbb'});}
 } else {movePath(u);}
 }
-function movePath(u){if(!u.path||!u.path.length)return;const d=u.path[0],dx=d.x-u.x,dy=d.y-u.y,dl=Math.sqrt(dx*dx+dy*dy);if(dl<u.spd*2||dl<4)u.path.shift();else{if(dl>=u.spd)u.angle=Math.atan2(dy,dx);u.x+=dx/dl*u.spd;u.y+=dy/dl*u.spd;pushOutOfBldgs(u);}}
+function movePath(u){
+if(!u.path||!u.path.length)return;
+// Skip intermediate waypoints now inside a complete building (happens when
+// a building is placed after the path was computed)
+while(u.path.length>1){
+const wp=u.path[0],tx=~~(wp.x/TILE),ty=~~(wp.y/TILE);
+if(tx>=0&&tx<MAP_W&&ty>=0&&ty<MAP_H&&!pass(tx,ty))u.path.shift();
+else break;
+}
+if(!u.path.length)return;
+const d=u.path[0],dx=d.x-u.x,dy=d.y-u.y,dl=Math.sqrt(dx*dx+dy*dy);
+if(dl<u.spd*2||dl<4){u.path.shift();u._stk=0;return;}
+const px=u.x,py=u.y;
+if(dl>=u.spd)u.angle=Math.atan2(dy,dx);
+u.x+=dx/dl*u.spd;u.y+=dy/dl*u.spd;
+pushOutOfBldgs(u);
+// Stuck detection: if pushOutOfBldgs is fighting movePath and the unit
+// barely moved, count frames. After ~1.5s clear the path so the state
+// machine re-navigates from the current position.
+if((u.x-px)**2+(u.y-py)**2<(u.spd*0.3)**2){u._stk=(u._stk||0)+1;}
+else{u._stk=0;}
+if(u._stk>45){u.path=[];u._stk=0;}
+}
 function pushOutOfBldgs(u){
 const R=10; // unit radius in world pixels
 for(const b of G.entities){
