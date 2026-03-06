@@ -167,6 +167,7 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 <span id="gameTime" class="res">0:00</span>
 <span id="mpTag" style="display:none;font-size:10px;padding:2px 7px;border-radius:3px;font-family:Orbitron,sans-serif;letter-spacing:1px;"></span>
 <span id="pingTxt"></span>
+<button id="radarBtn" onclick="activateRadarSpy()" style="display:none;background:none;border:1px solid #440000;color:#ff8888;font-size:10px;padding:2px 8px;cursor:pointer;border-radius:3px;font-family:Orbitron,sans-serif;letter-spacing:1px;white-space:nowrap;flex-shrink:0;margin-left:4px;"></button>
 <button id="chatToggleBtn" onclick="toggleChat()" style="background:none;border:1px solid #440000;color:#ff8888;font-size:15px;width:30px;height:30px;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;margin-left:4px;">💬</button>
 <button class="zoom-btn" onclick="camZoom(1.25)" title="Zoom in">+</button>
 <button class="zoom-btn" onclick="camZoom(0.8)" title="Zoom out">−</button>
@@ -721,7 +722,7 @@ placingBuilding:null,particles:[],projectiles:[],
 moveMarkers:[],dmgNums:[],groups:{},
 fog:Array.from({length:MAP_H},()=>new Uint8Array(MAP_W)),
 stats:{kills:[0,0,0,0],bldgsKilled:[0,0,0,0],creditsSpent:[0,0,0,0]},
-allies:{},aiSlots:[]};
+allies:{},aiSlots:[],radarReveals:[],radarCooldown:[0,0,0,0]};
 G.allies=buildAllies(np,MP.gameMode||'ffa');
 G.aiSlots=(MP.aiSlots||[]).map(s=>Object.assign({},s));
 for(let t=0;t<np;t++){const c=SPAWN_CORNERS[t];spawnBase(t,c.bx,c.by);}
@@ -894,6 +895,9 @@ for(let i=G.projectiles.length-1;i>=0;i--){const p=G.projectiles[i];p.x+=p.vx*dt
 for(let i=G.particles.length-1;i>=0;i--){const p=G.particles[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=20*dt;p.life-=dt;if(p.life<=0)G.particles.splice(i,1);}
 
 if(MP.mode==='solo'||MP.mode==='host'){for(const s of (G.aiSlots||[])){s.timer-=dt;if(s.timer<=0){const c=AI_CFG[s.diff||'medium'];s.timer=c.tMin+Math.random()*(c.tMax-c.tMin);runAI(s.team);}}}
+
+// Radar cooldowns
+if(G.radarCooldown){const np2=MP.numPlayers||2;for(let t=0;t<np2;t++){if(G.radarCooldown[t]>0)G.radarCooldown[t]=Math.max(0,G.radarCooldown[t]-dt);}}
 
 // Move markers
 if(G.moveMarkers){for(let i=G.moveMarkers.length-1;i>=0;i--){G.moveMarkers[i].life-=dt*1.5;if(G.moveMarkers[i].life<=0)G.moveMarkers.splice(i,1);}}
@@ -1220,6 +1224,17 @@ for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
 if(dx*dx+dy*dy>r*r)continue;
 const nx=tx+dx,ny=ty+dy;
 if(nx>=0&&nx<MAP_W&&ny>=0&&ny<MAP_H)G.fog[ny][nx]=2;
+}
+}
+// Active radar spy reveals
+if(G.radarReveals){
+G.radarReveals=G.radarReveals.filter(r=>r.until>G.time);
+for(const rv of G.radarReveals){
+for(let dy=-rv.r;dy<=rv.r;dy++)for(let dx=-rv.r;dx<=rv.r;dx++){
+if(dx*dx+dy*dy>rv.r*rv.r)continue;
+const nx=rv.cx+dx,ny=rv.cy+dy;
+if(nx>=0&&nx<MAP_W&&ny>=0&&ny<MAP_H)G.fog[ny][nx]=2;
+}
 }
 }
 }
@@ -2271,11 +2286,32 @@ t===T_MUD?'#4a3820':t===T_ROCK?'#525252':t===T_ORE?'#9a6600':'#2d5a1b';
 mctx.fillStyle=c;
 mctx.fillRect(~~(x*mw/MAP_W),~~(y*mh/MAP_H),Math.ceil(mw/MAP_W)+1,Math.ceil(mh/MAP_H)+1);
 }
+const mmVisTeams=G.allies&&G.allies[MP.myTeam]||[MP.myTeam];
 for(const e of G.entities){
 if(e.hp<=0)continue;
+const isFriendly=mmVisTeams.includes(e.team);
+if(!isFriendly&&G.fog){
+const etx=e.isBuilding?e.tx:~~(e.x/TILE);
+const ety=e.isBuilding?e.ty:~~(e.y/TILE);
+const fv=(G.fog[ety]?.[etx])??0;
+if(fv<1)continue; // never seen — hide entirely
+mctx.globalAlpha=fv>=2?1:0.35; // explored-but-not-visible = dim ghost
+} else {
+mctx.globalAlpha=1;
+}
 mctx.fillStyle=['#4488ff','#ff4444','#44aa44','#cccc44'][e.team]||'#aaaaaa';
 if(e.isBuilding){const d=BD[e.type];mctx.fillRect(~~(e.tx*mw/MAP_W),~~(e.ty*mh/MAP_H),~~(d.w*mw/MAP_W)+1,~~(d.h*mh/MAP_H)+1);}
 else mctx.fillRect(~~(e.x/PW*mw)-1,~~(e.y/PH*mh)-1,3,3);
+mctx.globalAlpha=1;
+}
+// Fog overlay on minimap
+if(G.fog){
+for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++){
+const fv=G.fog[y][x];
+if(fv===2)continue;
+mctx.fillStyle=fv===1?'rgba(0,0,0,0.45)':'rgba(0,0,0,0.82)';
+mctx.fillRect(~~(x*mw/MAP_W),~~(y*mh/MAP_H),Math.ceil(mw/MAP_W)+1,Math.ceil(mh/MAP_H)+1);
+}
 }
 const z=gz(),cam=G.camera;
 mctx.strokeStyle='rgba(255,255,255,0.5)';mctx.lineWidth=1;
@@ -2317,6 +2353,25 @@ const p=MP.ping;
 pingEl.textContent=`📶 ${p}ms`;
 pingEl.style.color=p>500?'#ff4400':p>200?'#ff8800':'#44ff44';
 } else pingEl.style.display='none';
+
+// Radar spy button
+const radarBtn=document.getElementById('radarBtn');
+if(radarBtn&&G.entities){
+const hasRadar=G.entities.some(e=>e.isBuilding&&e.type==='Radar'&&e.team===mt&&e.complete&&e.hp>0);
+if(!hasRadar||G.gameOver){radarBtn.style.display='none';}
+else{
+const cd=Math.max(0,G.radarCooldown?.[mt]||0);
+radarBtn.style.display='';
+if(touchMode==='radarSpy'){
+radarBtn.textContent='🛰 SPY ●';radarBtn.style.borderColor='#ff4444';radarBtn.style.opacity='1';radarBtn.style.cursor='pointer';
+}else if(cd>0){
+const m=~~(cd/60),s=~~(cd%60);
+radarBtn.textContent=`📡 ${m}:${s.toString().padStart(2,'0')}`;radarBtn.style.borderColor='#440000';radarBtn.style.opacity='0.55';radarBtn.style.cursor='default';
+}else{
+radarBtn.textContent='🛰 SPY';radarBtn.style.borderColor='#ff4444';radarBtn.style.opacity='1';radarBtn.style.cursor='pointer';
+}
+}
+}
 
 const bar=document.getElementById('bottomBar');
 bar.innerHTML='';
@@ -2368,9 +2423,27 @@ bar.appendChild(sep);
 const items=getBuildables(bldg.type);
 
 if(!items.length){
+if(bldg.type==='Radar'){
+const cd=Math.max(0,G.radarCooldown?.[MP.myTeam]||0);
+const wrap=document.createElement('div');
+wrap.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 14px;gap:5px;';
+if(cd>0){
+const m=~~(cd/60),s=~~(cd%60);
+wrap.innerHTML=`<span style="color:#554444;font-size:10px;letter-spacing:1px">📡 SCANNING</span><span style="color:#666;font-size:9px">SPY READY IN ${m}:${s.toString().padStart(2,'0')}</span>`;
+}else{
+const btn=document.createElement('button');
+btn.className='start-btn';
+btn.style.cssText='padding:5px 14px;font-size:11px;border-color:#ff4444;color:#ff8888;letter-spacing:1px;';
+btn.textContent='🛰 SPY';
+btn.onclick=()=>activateRadarSpy();
+wrap.innerHTML='<span style="color:#554444;font-size:10px;letter-spacing:1px">📡 SCANNING</span>';
+wrap.appendChild(btn);
+}
+bar.appendChild(wrap); return;
+}
 const msg=document.createElement('span');
 msg.style.cssText='color:#554444;font-size:11px;padding:0 14px;align-self:center;white-space:nowrap;';
-const labels={Refinery:'⛏️ Processing ore',Power:'⚡ Generating power',Turret:'🗼 Auto-defending',Radar:'📡 Scanning'};
+const labels={Refinery:'⛏️ Processing ore',Power:'⚡ Generating power',Turret:'🗼 Auto-defending'};
 msg.textContent=labels[bldg.type]||'No production';
 bar.appendChild(msg); return;
 }
@@ -2532,6 +2605,7 @@ return G.entities.filter(e=>e.team===team&&e.isUnit&&e.hp>0&&e.x>=mx&&e.x<=mxx&&
 }
 
 function issueOrder(wx,wy){
+if(touchMode==='radarSpy'){placeRadarReveal(wx,wy);return;}
 // Attack-move mode
 if(touchMode==='attackmove'){
 if(MP.mode==='client'){
@@ -2618,6 +2692,7 @@ showMsg(`${BD[G.placingBuilding].name} under construction…`);
 G.placingBuilding=null; touchMode='select'; hideMI(); return;
 }
 
+if(touchMode==='radarSpy'){placeRadarReveal(wx,wy);return;}
 if(touchMode==='move'){if(G.selected.length>0)issueOrder(wx,wy);return;}
 if(touchMode==='attack'){
 const en=findAt(wx,wy,myEnemy());
@@ -2905,6 +2980,29 @@ function showMI(t){const el=document.getElementById('modeInd');el.textContent=t;
 function hideMI(){clearTimeout(miT);document.getElementById('modeInd').classList.remove('vis');document.getElementById('btnMove').classList.remove('active');document.getElementById('btnAttack').classList.remove('active');document.getElementById('btnAMove').classList.remove('active');touchMode='select';}
 function showMsg(text){const d=document.createElement('div');d.className='message';d.textContent=text;document.getElementById('messages').appendChild(d);setTimeout(()=>d.remove(),3000);}
 
+// ─── RADAR SPY ────────────────────────────────────────
+const RADAR_COOLDOWN=120, RADAR_DURATION=900, RADAR_RADIUS=10;
+function activateRadarSpy(){
+const mt=MP.myTeam;
+if((G.radarCooldown?.[mt]||0)>0)return;
+if(!G.entities||!G.entities.some(e=>e.isBuilding&&e.type==='Radar'&&e.team===mt&&e.complete&&e.hp>0))return;
+touchMode='radarSpy';
+showMI('🛰 SPY — click map to reveal area · Esc cancel');
+}
+function placeRadarReveal(wx,wy){
+const mt=MP.myTeam;
+const cx=~~(wx/TILE), cy=~~(wy/TILE);
+if(MP.mode==='client'){
+try{MP.conn.send(JSON.stringify({t:'radarSpy',cx,cy}));}catch(_){}
+} else {
+if(!G.radarReveals)G.radarReveals=[];
+G.radarReveals.push({cx,cy,r:RADAR_RADIUS,until:G.time+RADAR_DURATION});
+if(G.radarCooldown)G.radarCooldown[mt]=RADAR_COOLDOWN;
+}
+touchMode='select'; hideMI();
+showMsg('🛰 Spy satellite deployed — 15 min coverage!');
+}
+
 // ─── MULTIPLAYER ──────────────────────────────────────
 function mpLobby(html){const el=document.getElementById('mpLobby');el.style.display='block';el.innerHTML=html;}
 const MP_CFG={debug:2,config:{iceServers:[
@@ -3159,7 +3257,7 @@ rally:e.rally||null,
 
 function mpSendState(){
 if(!MP.conns||!MP.conns.length)return;
-mpSendAll({t:'state',e:mpSerEnt(),cr:G.credits,po:G.power,pu2:G.pu,ti:~~G.time,go:G.gameOver?1:0,pr:G.projectiles.map(p=>({x:~~p.x,y:~~p.y,vx:~~p.vx,vy:~~p.vy,life:p.life,team:p.team}))});
+mpSendAll({t:'state',e:mpSerEnt(),cr:G.credits,po:G.power,pu2:G.pu,ti:~~G.time,go:G.gameOver?1:0,pr:G.projectiles.map(p=>({x:~~p.x,y:~~p.y,vx:~~p.vx,vy:~~p.vy,life:p.life,team:p.team})),rr:G.radarReveals||[],rc:G.radarCooldown||[0,0,0,0]});
 }
 
 function mpApplyState(msg){
@@ -3173,6 +3271,8 @@ G.pu=msg.pu2||G.pu;
 if(msg.ti!==undefined)G.time=msg.ti;
 if(msg.go)G.gameOver=true;
 if(msg.pr)G.projectiles=msg.pr.map(p=>({x:p.x,y:p.y,vx:p.vx,vy:p.vy,life:p.life,team:p.team}));
+if(msg.rr)G.radarReveals=msg.rr;
+if(msg.rc)G.radarCooldown=msg.rc;
 G.selected=G.entities.filter(e=>selIds.has(e.id)&&e.hp>0);
 // Recompute fog for client
 updateFog();
@@ -3220,6 +3320,16 @@ chatLog(`P${from}: ${msg.msg}`,'chat-opp');
 // Rebroadcast to all other clients
 const s=JSON.stringify({t:'chat',msg:msg.msg,from});
 for(let i=0;i<MP.conns.length;i++){if(i+1!==senderTeam&&MP.conns[i]?.open)try{MP.conns[i].send(s);}catch(_){}}
+} else if(msg.t==='radarSpy'){
+// Validate sender has a Radar and is not on cooldown
+if(G.radarCooldown&&(G.radarCooldown[senderTeam]||0)<=0){
+const hasRadar=G.entities.some(e=>e.isBuilding&&e.type==='Radar'&&e.team===senderTeam&&e.complete&&e.hp>0);
+if(hasRadar){
+if(!G.radarReveals)G.radarReveals=[];
+G.radarReveals.push({cx:msg.cx,cy:msg.cy,r:RADAR_RADIUS,until:G.time+RADAR_DURATION});
+G.radarCooldown[senderTeam]=RADAR_COOLDOWN;
+}
+}
 } else if(msg.t==='pong'){
 MP.ping=Date.now()-msg.ts;
 } else if(msg.t==='rejoin'){
