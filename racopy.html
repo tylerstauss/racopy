@@ -144,7 +144,15 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 <div id="mpBtns" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:10px;">
 <button class="start-btn" onclick="mpHost()">🖥 HOST GAME</button>
 <button class="start-btn" onclick="mpShowJoin()">🔗 JOIN GAME</button>
-<button class="start-btn" onclick="startSolo()">🤖 VS AI</button>
+</div>
+<div style="margin-top:10px;text-align:center;">
+<div style="color:#554444;font-size:11px;letter-spacing:2px;margin-bottom:6px;">🤖 VS AI</div>
+<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;">
+<button class="start-btn" style="font-size:11px;padding:8px 14px" onclick="startSolo('easy')">😴 Easy</button>
+<button class="start-btn" style="font-size:11px;padding:8px 14px" onclick="startSolo('medium')">⚔️ Medium</button>
+<button class="start-btn" style="font-size:11px;padding:8px 14px" onclick="startSolo('hard')">💀 Hard</button>
+<button class="start-btn" style="font-size:11px;padding:8px 14px" onclick="startSolo('amazing')">🔥 Amazing</button>
+</div>
 </div>
 <div id="mpLobby" style="display:none;text-align:center;padding:14px 8px;min-height:70px;"></div>
 </div>
@@ -868,7 +876,7 @@ if(e.team===MP.myTeam){showMsg(`${UD[item.type].name} ready!`);playSound('build'
 for(let i=G.projectiles.length-1;i>=0;i--){const p=G.projectiles[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;if(p.life<=0)G.projectiles.splice(i,1);}
 for(let i=G.particles.length-1;i>=0;i--){const p=G.particles[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=20*dt;p.life-=dt;if(p.life<=0)G.particles.splice(i,1);}
 
-if(MP.mode==='solo'){G.aiTimer-=dt; if(G.aiTimer<=0){G.aiTimer=3+Math.random()*2;runAI();}}
+if(MP.mode==='solo'){G.aiTimer-=dt; if(G.aiTimer<=0){const _ac=AI_CFG[MP.aiDiff||'medium'];G.aiTimer=_ac.tMin+Math.random()*(_ac.tMax-_ac.tMin);runAI();}}
 
 // Move markers
 if(G.moveMarkers){for(let i=G.moveMarkers.length-1;i>=0;i--){G.moveMarkers[i].life-=dt*1.5;if(G.moveMarkers[i].life<=0)G.moveMarkers.splice(i,1);}}
@@ -983,7 +991,19 @@ function dist(a,b){return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2);}
 function d2p(a,b){return(a.x-b.x)**2+(a.y-b.y)**2;}
 
 // ─── AI ───────────────────────────────────────────────
+// ─── AI DIFFICULTY CONFIGS ────────────────────────────
+const AI_CFG={
+  easy:   {tMin:5,  tMax:9,  atkMin:8, bkMax:1, wfMax:1, wfMax2:1, riflePct:0.7, tankPct:0.45, maxTurrets:1, maxPower:2, maxWF:1, repairHp:0.35, defRange:5,  creditBonus:0,    atkReroute:0.05},
+  medium: {tMin:3,  tMax:5,  atkMin:5, bkMax:3, wfMax:2, wfMax2:2, riflePct:0.4, tankPct:0.7,  maxTurrets:3, maxPower:4, maxWF:1, repairHp:0.7,  defRange:8,  creditBonus:0,    atkReroute:0.15},
+  hard:   {tMin:1.5,tMax:3,  atkMin:3, bkMax:4, wfMax:3, wfMax2:3, riflePct:0.15,tankPct:0.82, maxTurrets:6, maxPower:6, maxWF:2, repairHp:0.82, defRange:12, creditBonus:500,  atkReroute:0.25},
+  amazing:{tMin:0.6,tMax:1.2,atkMin:2, bkMax:6, wfMax:4, wfMax2:5, riflePct:0.0, tankPct:0.88, maxTurrets:10,maxPower:8, maxWF:2, repairHp:0.92, defRange:18, creditBonus:1200, atkReroute:0.4},
+};
+
 function runAI(){
+const cfg=AI_CFG[MP.aiDiff||'medium'];
+// Amazing AI gets a passive credit bonus each run to simulate better economy
+if(cfg.creditBonus>0)G.credits[TE]+=cfg.creditBonus*(cfg.tMin+cfg.tMax)/2*0.04;
+
 const cr=G.credits[TE];
 const bs=G.entities.filter(e=>e.isBuilding&&e.team===TE&&e.complete);
 const us=G.entities.filter(e=>e.isUnit&&e.team===TE);
@@ -994,51 +1014,64 @@ const cony=bs.find(b=>b.type==='ConYard');
 if(cony){
 const powerCount=bs.filter(b=>b.type==='Power').length;
 const turretCount=bs.filter(b=>b.type==='Turret').length;
+const wfCount=bs.filter(b=>b.type==='WarFac').length;
+const refCount=bs.filter(b=>b.type==='Refinery').length;
 if(powerCount<2&&cr>=300)aiBld('Power',cony);
 else if(!has('Refinery')&&cr>=2000)aiBld('Refinery',cony);
 else if(!has('Barracks')&&cr>=500)aiBld('Barracks',cony);
 else if(!has('WarFac')&&cr>=2000)aiBld('WarFac',cony);
 else if(!has('Radar')&&cr>=1000)aiBld('Radar',cony);
-else if(turretCount<3&&cr>=600)aiBld('Turret',cony);
-else if(powerCount<4&&cr>=300)aiBld('Power',cony);
+else if(turretCount<cfg.maxTurrets&&cr>=600)aiBld('Turret',cony);
+else if(powerCount<cfg.maxPower&&cr>=300)aiBld('Power',cony);
+// Hard/Amazing: second WarFac and second Refinery for double production
+else if(wfCount<cfg.maxWF&&cr>=2000)aiBld('WarFac',cony);
+else if(refCount<2&&cfg.maxWF>1&&cr>=2000)aiBld('Refinery',cony);
 }
 
 // Train units
-const bk=bs.find(b=>b.type==='Barracks');
-const wf=bs.find(b=>b.type==='WarFac');
+const bks=bs.filter(b=>b.type==='Barracks');
+const wfs=bs.filter(b=>b.type==='WarFac');
 const hasRadar=has('Radar');
 
-if(bk&&(!bk.bq||bk.bq.length<3)){
+for(const bk of bks){
+if(!bk.bq||bk.bq.length<cfg.bkMax){
 if(hasRadar&&cr>=1000&&!us.some(u=>u.type==='Repairman'))aiQ(bk,'Repairman');
-else if(cr>=300)aiQ(bk,Math.random()<0.4?'Rifleman':'GI');
-}
-if(wf&&(!wf.bq||wf.bq.length<2)){
+else if(cr>=300)aiQ(bk,Math.random()<cfg.riflePct?'Rifleman':'GI');
+}}
+for(const wf of wfs){
+const wfLimit=wfs.indexOf(wf)===0?cfg.wfMax:cfg.wfMax2;
+if(!wf.bq||wf.bq.length<wfLimit){
 if(!us.some(u=>u.type==='Harvester'))aiQ(wf,'Harvester');
-else if(cr>=700)aiQ(wf,Math.random()<0.7?'Tank':'IFV');
-}
+else if(cr>=700)aiQ(wf,Math.random()<cfg.tankPct?'Tank':'IFV');
+}}
 
-// Use Repairman to repair damaged buildings
-const rm=us.find(u=>u.type==='Repairman'&&u.state==='idle');
-if(rm){
-const dmgBldg=bs.find(b=>b.hp<b.maxHp*0.7);
+// Repair damaged buildings
+us.filter(u=>u.type==='Repairman'&&u.state==='idle').forEach(rm=>{
+const dmgBldg=bs.find(b=>b.hp<b.maxHp*cfg.repairHp);
 if(dmgBldg){rm.repairTarget=dmgBldg;rm.state='repair';rm.path=fp(rm.x,rm.y,dmgBldg.x,dmgBldg.y);}
-}
+});
 
-// Attack: send forces in waves
+// Attack: send forces in waves once threshold is met
 const fighters=us.filter(u=>u.dmg>0&&u.type!=='Harvester');
-if(fighters.length>=5){
-const target=G.entities.filter(e=>e.team===TP&&e.hp>0)
-.sort((a,b2)=>d2p(fighters[0],a)-d2p(fighters[0],b2))[0];
+if(fighters.length>=cfg.atkMin){
+// Amazing/Hard: specifically target the enemy harvester first to cripple economy
+let target;
+if(cfg.atkMin<=3){
+target=G.entities.find(e=>e.team===TP&&e.hp>0&&e.type==='Harvester')
+||G.entities.filter(e=>e.team===TP&&e.hp>0).sort((a,b2)=>d2p(fighters[0],a)-d2p(fighters[0],b2))[0];
+} else {
+target=G.entities.filter(e=>e.team===TP&&e.hp>0).sort((a,b2)=>d2p(fighters[0],a)-d2p(fighters[0],b2))[0];
+}
 if(target)fighters.forEach(f=>{
-if(f.state==='idle'||(f.state!=='attack'&&Math.random()<0.15)){
+if(f.state==='idle'||(f.state!=='attack'&&Math.random()<cfg.atkReroute)){
 f.target=target;f.state='attack';f.path=fp(f.x,f.y,target.x,target.y);
 }
 });
 }
 
-// Defend: if enemy is close to base, defenders fight back
+// Defend: react to nearby enemies
 us.filter(u=>u.state==='idle'&&u.dmg>0).forEach(u=>{
-const nearby=findEnemy(u.x,u.y,TILE*8,TE);
+const nearby=findEnemy(u.x,u.y,TILE*cfg.defRange,TE);
 if(nearby){u.target=nearby;u.state='attack';u.path=fp(u.x,u.y,nearby.x,nearby.y);}
 });
 }
@@ -3044,10 +3077,11 @@ if(MP.conn)try{MP.conn.send(JSON.stringify({t:'init',map:G.map,e:mpSerEnt(),cr:G
 }
 }
 
-function startSolo(){
-MP.mode='solo'; MP.myTeam=TP;
+function startSolo(diff='medium'){
+MP.mode='solo'; MP.myTeam=TP; MP.aiDiff=diff;
 if(MP.peer){try{MP.peer.destroy();}catch(_){} MP.peer=null; MP.conn=null;}
 startGame();
+showMsg('🤖 AI difficulty: '+diff.toUpperCase());
 }
 // ─── CHAT ─────────────────────────────────────────────
 function toggleChat(){
