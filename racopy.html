@@ -81,6 +81,8 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 /* INFO BUTTON */
 #infoBtn{background:none;border:1px solid #440000;color:#ff8888;font-size:15px;width:30px;height:30px;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;margin-left:6px;}
 #infoBtn:active{background:#330000;}
+.zoom-btn{background:none;border:1px solid #440000;color:#ff8888;font-size:17px;font-weight:bold;width:30px;height:30px;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;margin-left:4px;}
+.zoom-btn:active{background:#330000;}
 /* INFO MODAL */
 #infoModal{position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:800;display:none;overflow-y:auto;-webkit-overflow-scrolling:touch;}
 #infoModal.open{display:block;}
@@ -166,6 +168,8 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 <span id="mpTag" style="display:none;font-size:10px;padding:2px 7px;border-radius:3px;font-family:Orbitron,sans-serif;letter-spacing:1px;"></span>
 <span id="pingTxt"></span>
 <button id="chatToggleBtn" onclick="toggleChat()" style="background:none;border:1px solid #440000;color:#ff8888;font-size:15px;width:30px;height:30px;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;margin-left:4px;">💬</button>
+<button class="zoom-btn" onclick="camZoom(1.25)" title="Zoom in">+</button>
+<button class="zoom-btn" onclick="camZoom(0.8)" title="Zoom out">−</button>
 <button id="infoBtn" onclick="openInfo()" title="How to play">ℹ</button>
 </div>
 <canvas id="gameCanvas"></canvas>
@@ -3118,6 +3122,16 @@ document.querySelectorAll('.info-pane').forEach(p=>p.classList.toggle('active',p
 }
 // Close modal on backdrop click
 document.getElementById('infoModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeInfo();});
+// Button zoom — zooms toward the viewport center
+function camZoom(factor){
+if(!G.camera)return;
+const z=gz(),nz=Math.max(0.4,Math.min(2.5,z*factor));
+const cx=canvas.width/2,cy=canvas.height/2;
+const wx=cx/z+G.camera.x,wy=cy/z+G.camera.y;
+G.camera.zoom=nz;
+G.camera.x=Math.max(0,Math.min(PW-canvas.width/nz,wx-cx/nz));
+G.camera.y=Math.max(0,Math.min(PH-canvas.height/nz,wy-cy/nz));
+}
 // Scroll-wheel zoom
 canvas.addEventListener('wheel',e=>{
 e.preventDefault();
