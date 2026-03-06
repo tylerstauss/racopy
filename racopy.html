@@ -345,11 +345,18 @@ const PW = MAP_W * TILE, PH = MAP_H * TILE;
 const T_DEEP=0, T_SHALLOW=1, T_SAND=2, T_GRASS=3, T_FOREST=4,
 T_DIRT=5, T_MUD=6, T_ROCK=7, T_ORE=8;
 const TP=0, TE=1;
+// Spawn corners: TL, BR, TR, BL
+const SPAWN_CORNERS=[{bx:5,by:5},{bx:MAP_W-15,by:MAP_H-15},{bx:MAP_W-15,by:5},{bx:5,by:MAP_H-15}];
 
 let G = {}, touchMode = 'select', mmVisible = true;
-const MP = {mode:'solo', peer:null, conn:null, myTeam:TP, connected:false, stTimer:0, ping:0, lastStateAt:0};
-function dispTeam(t){if(MP.mode==='client'){return t===TE?TP:TE;}return t;}
-function myEnemy(){return MP.myTeam===TP?TE:TP;}
+const MP = {mode:'solo', peer:null, conn:null, conns:[], myTeam:TP, connected:false, stTimer:0, ping:0, lastStateAt:0, numPlayers:2, gameMode:'ffa', aiSlots:[]};
+function dispTeam(t){return t;}
+function myEnemy(){const allies=G.allies&&G.allies[MP.myTeam]||[MP.myTeam];for(let t=0;t<4;t++){if(!allies.includes(t)&&G.entities&&G.entities.some(e=>e.team===t&&e.hp>0))return t;}return MP.myTeam===TP?TE:TP;}
+function isEnemy(a,b){return !((G.allies&&G.allies[a])||[a]).includes(b);}
+function mpSendAll(msg){const s=JSON.stringify(msg);for(const c of (MP.conns||[])){if(c&&c.open)try{c.send(s);}catch(_){}};}
+function mpSendTo(team,msg){const c=MP.conns[team-1];if(c&&c.open)try{c.send(JSON.stringify(msg));}catch(_){};}
+function buildAllies(numPlayers,gameMode){const a={};if(gameMode==='2v2'&&numPlayers===4){a[0]=[0,2];a[1]=[1,3];a[2]=[0,2];a[3]=[1,3];}else{for(let t=0;t<numPlayers;t++)a[t]=[t];}return a;}
+function myEnemyOf(team){const allies=(G.allies&&G.allies[team])||[team];for(let t=0;t<4;t++){if(!allies.includes(t)&&G.entities&&G.entities.some(e=>e.team===t&&e.hp>0))return t;}return team===0?1:0;}
 
 // ─── SEEDED PRNG ───────────────────────────────────────
 let _rng = Math.random;
@@ -706,13 +713,19 @@ Object.values(UD).forEach(d=>d.bt=calcBuildTime(d.cost));
 function initGame(){
 terrainCacheDirty=true; terrainCache=null;
 seedRng(document.getElementById('mapSeedInput')?.value || String(Date.now()));
-G={map:generateMap(),entities:[],nextId:1,credits:[3000,3000],power:[0,0],pu:[0,0],
+const np=MP.numPlayers||2;
+G={map:generateMap(),entities:[],nextId:1,
+credits:[3000,3000,3000,3000],power:[0,0,0,0],pu:[0,0,0,0],
 selected:[],camera:{x:0,y:0,zoom:1},time:0,tick:0,gameOver:false,
-placingBuilding:null,aiTimer:0,particles:[],projectiles:[],
+placingBuilding:null,particles:[],projectiles:[],
 moveMarkers:[],dmgNums:[],groups:{},
 fog:Array.from({length:MAP_H},()=>new Uint8Array(MAP_W)),
-stats:{kills:[0,0],bldgsKilled:[0,0],creditsSpent:[0,0]}};
-spawnBase(TP,5,5); spawnBase(TE,MAP_W-15,MAP_H-15); upPow();
+stats:{kills:[0,0,0,0],bldgsKilled:[0,0,0,0],creditsSpent:[0,0,0,0]},
+allies:{},aiSlots:[]};
+G.allies=buildAllies(np,MP.gameMode||'ffa');
+G.aiSlots=(MP.aiSlots||[]).map(s=>Object.assign({},s));
+for(let t=0;t<np;t++){const c=SPAWN_CORNERS[t];spawnBase(t,c.bx,c.by);}
+upPow();
 buildTerrainCache();
 }
 
@@ -752,7 +765,7 @@ for(let i=0;i<3;i++) mkUnit('GI',team,(bx+9+i)*TILE,(by+1)*TILE);
 mkUnit('Tank',team,(bx+9)*TILE,(by+3)*TILE);
 }
 function upPow(){
-G.power=[0,0];G.pu=[0,0];
+G.power=[0,0,0,0];G.pu=[0,0,0,0];
 for(const e of G.entities){if(!e.isBuilding||!e.complete)continue;G.power[e.team]+=BD[e.type].power;G.pu[e.team]+=BD[e.type].pu;}
 }
 
@@ -828,7 +841,7 @@ G.time+=dt; G.tick++;
 if(MP.mode!=='client') update(dt);
 updateFog();
 render(); updateUI();
-if(MP.mode==='host'&&MP.connected){MP.stTimer-=dt;if(MP.stTimer<=0){MP.stTimer=0.25;mpSendState();}}
+if(MP.mode==='host'&&MP.conns.some(c=>c&&c.open)){MP.stTimer-=dt;if(MP.stTimer<=0){MP.stTimer=0.25;mpSendState();}}
 }
 
 function update(dt){
@@ -880,7 +893,7 @@ if(e.team===MP.myTeam){showMsg(`${UD[item.type].name} ready!`);playSound('build'
 for(let i=G.projectiles.length-1;i>=0;i--){const p=G.projectiles[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;if(p.life<=0)G.projectiles.splice(i,1);}
 for(let i=G.particles.length-1;i>=0;i--){const p=G.particles[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=20*dt;p.life-=dt;if(p.life<=0)G.particles.splice(i,1);}
 
-if(MP.mode==='solo'){G.aiTimer-=dt; if(G.aiTimer<=0){const _ac=AI_CFG[MP.aiDiff||'medium'];G.aiTimer=_ac.tMin+Math.random()*(_ac.tMax-_ac.tMin);runAI();}}
+if(MP.mode==='solo'||MP.mode==='host'){for(const s of (G.aiSlots||[])){s.timer-=dt;if(s.timer<=0){const c=AI_CFG[s.diff||'medium'];s.timer=c.tMin+Math.random()*(c.tMax-c.tMin);runAI(s.team);}}}
 
 // Move markers
 if(G.moveMarkers){for(let i=G.moveMarkers.length-1;i>=0;i--){G.moveMarkers[i].life-=dt*1.5;if(G.moveMarkers[i].life<=0)G.moveMarkers.splice(i,1);}}
@@ -891,7 +904,8 @@ if(G.dmgNums){for(let i=G.dmgNums.length-1;i>=0;i--){const n=G.dmgNums[i];n.y+=n
 for(let i=G.entities.length-1;i>=0;i--){
 if(G.entities[i].hp<=0){
 const dead=G.entities[i];
-const killer=dead.team===TP?1:0;
+const enemies=Object.keys(G.allies||{}).map(Number).filter(t=>isEnemy(t,dead.team));
+const killer=enemies[0]??(dead.team===0?1:0);
 if(dead.isUnit&&G.stats)G.stats.kills[killer]++;
 if(dead.isBuilding&&G.stats)G.stats.bldgsKilled[killer]++;
 spawnEx(dead.x,dead.y,dead.isBuilding?3:1);
@@ -1026,16 +1040,20 @@ const AI_CFG={
   amazing:{tMin:0.6,tMax:1.2,atkMin:3, bkMax:6, wfMax:4, wfMax2:5, riflePct:0.0, tankPct:0.88, minTurrets:4, maxTurrets:12, maxPower:8, maxWF:2, repairHp:0.92, defRange:18, creditBonus:1200, atkReroute:0.45, garrison:3},
 };
 
-function runAI(){
-const cfg=AI_CFG[MP.aiDiff||'medium'];
+function runAI(aiTeam){
+if(aiTeam===undefined)aiTeam=TE;
+const aiSlot=G.aiSlots&&G.aiSlots.find(s=>s.team===aiTeam);
+const diff=aiSlot?aiSlot.diff:(MP.aiDiff||'medium');
+const cfg=AI_CFG[diff];
 // Amazing AI gets a passive credit bonus each run to simulate better economy
-if(cfg.creditBonus>0)G.credits[TE]+=cfg.creditBonus*(cfg.tMin+cfg.tMax)/2*0.04;
+if(cfg.creditBonus>0)G.credits[aiTeam]+=cfg.creditBonus*(cfg.tMin+cfg.tMax)/2*0.04;
 
-const cr=G.credits[TE];
-const bs=G.entities.filter(e=>e.isBuilding&&e.team===TE&&e.complete);
-const us=G.entities.filter(e=>e.isUnit&&e.team===TE);
+const cr=G.credits[aiTeam];
+const bs=G.entities.filter(e=>e.isBuilding&&e.team===aiTeam&&e.complete);
+const us=G.entities.filter(e=>e.isUnit&&e.team===aiTeam);
 const has=t=>bs.some(b=>b.type===t);
 const cony=bs.find(b=>b.type==='ConYard');
+const enemyTeam=myEnemyOf(aiTeam);
 
 // Build priority order
 if(cony){
@@ -1044,19 +1062,19 @@ const turretCount=bs.filter(b=>b.type==='Turret').length;
 const wfCount=bs.filter(b=>b.type==='WarFac').length;
 const refCount=bs.filter(b=>b.type==='Refinery').length;
 // Core infra first
-if(powerCount<2&&cr>=300)aiBld('Power',cony);
-else if(!has('Refinery')&&cr>=2000)aiBld('Refinery',cony);
-else if(!has('Barracks')&&cr>=500)aiBld('Barracks',cony);
+if(powerCount<2&&cr>=300)aiBld('Power',cony,aiTeam);
+else if(!has('Refinery')&&cr>=2000)aiBld('Refinery',cony,aiTeam);
+else if(!has('Barracks')&&cr>=500)aiBld('Barracks',cony,aiTeam);
 // Early defense turrets before committing to offense
-else if(turretCount<cfg.minTurrets&&cr>=600)aiBldNear('Turret',cony,bs);
-else if(!has('WarFac')&&cr>=2000)aiBld('WarFac',cony);
-else if(!has('Radar')&&cr>=1000)aiBld('Radar',cony);
+else if(turretCount<cfg.minTurrets&&cr>=600)aiBldNear('Turret',cony,bs,aiTeam);
+else if(!has('WarFac')&&cr>=2000)aiBld('WarFac',cony,aiTeam);
+else if(!has('Radar')&&cr>=1000)aiBld('Radar',cony,aiTeam);
 // Keep building more turrets as economy grows
-else if(turretCount<cfg.maxTurrets&&cr>=600)aiBldNear('Turret',cony,bs);
-else if(powerCount<cfg.maxPower&&cr>=300)aiBld('Power',cony);
+else if(turretCount<cfg.maxTurrets&&cr>=600)aiBldNear('Turret',cony,bs,aiTeam);
+else if(powerCount<cfg.maxPower&&cr>=300)aiBld('Power',cony,aiTeam);
 // Hard/Amazing: second WarFac and second Refinery for double production
-else if(wfCount<cfg.maxWF&&cr>=2000)aiBld('WarFac',cony);
-else if(refCount<2&&cfg.maxWF>1&&cr>=2000)aiBld('Refinery',cony);
+else if(wfCount<cfg.maxWF&&cr>=2000)aiBld('WarFac',cony,aiTeam);
+else if(refCount<2&&cfg.maxWF>1&&cr>=2000)aiBld('Refinery',cony,aiTeam);
 }
 
 // Train units
@@ -1066,14 +1084,14 @@ const hasRadar=has('Radar');
 
 for(const bk of bks){
 if(!bk.bq||bk.bq.length<cfg.bkMax){
-if(hasRadar&&cr>=1000&&!us.some(u=>u.type==='Repairman'))aiQ(bk,'Repairman');
-else if(cr>=300)aiQ(bk,Math.random()<cfg.riflePct?'Rifleman':'GI');
+if(hasRadar&&cr>=1000&&!us.some(u=>u.type==='Repairman'))aiQ(bk,'Repairman',aiTeam);
+else if(cr>=300)aiQ(bk,Math.random()<cfg.riflePct?'Rifleman':'GI',aiTeam);
 }}
 for(const wf of wfs){
 const wfLimit=wfs.indexOf(wf)===0?cfg.wfMax:cfg.wfMax2;
 if(!wf.bq||wf.bq.length<wfLimit){
-if(!us.some(u=>u.type==='Harvester'))aiQ(wf,'Harvester');
-else if(cr>=700)aiQ(wf,Math.random()<cfg.tankPct?'Tank':'IFV');
+if(!us.some(u=>u.type==='Harvester'))aiQ(wf,'Harvester',aiTeam);
+else if(cr>=700)aiQ(wf,Math.random()<cfg.tankPct?'Tank':'IFV',aiTeam);
 }}
 
 // Repair damaged buildings
@@ -1085,7 +1103,7 @@ if(dmgBldg){rm.repairTarget=dmgBldg;rm.state='repair';rm.path=fp(rm.x,rm.y,dmgBl
 // Attack: send forces in waves once threshold is met, keep garrison at home
 const fighters=us.filter(u=>u.dmg>0&&u.type!=='Harvester');
 // Sort by proximity to enemy base so vanguard leads
-const enemyBldgs=G.entities.filter(e=>e.team===TP&&e.hp>0&&e.isBuilding);
+const enemyBldgs=G.entities.filter(e=>isEnemy(aiTeam,e.team)&&e.hp>0&&e.isBuilding);
 const enemyRef=enemyBldgs[0]||{x:MAP_W*TILE/2,y:MAP_H*TILE/2};
 fighters.sort((a,b2)=>d2p(a,enemyRef)-d2p(b2,enemyRef));
 // Keep garrison units near ConYard
@@ -1096,11 +1114,11 @@ if(attackers.length>=cfg.atkMin){
 // Hard/Amazing: target harvester to cripple economy; others: target nearest
 let target;
 if(cfg.atkMin<=4){
-target=G.entities.find(e=>e.team===TP&&e.hp>0&&e.type==='Harvester')
-||G.entities.filter(e=>e.team===TP&&e.hp>0&&e.isBuilding).sort((a,b2)=>d2p(attackers[0],a)-d2p(attackers[0],b2))[0]
-||G.entities.filter(e=>e.team===TP&&e.hp>0).sort((a,b2)=>d2p(attackers[0],a)-d2p(attackers[0],b2))[0];
+target=G.entities.find(e=>isEnemy(aiTeam,e.team)&&e.hp>0&&e.type==='Harvester')
+||G.entities.filter(e=>isEnemy(aiTeam,e.team)&&e.hp>0&&e.isBuilding).sort((a,b2)=>d2p(attackers[0],a)-d2p(attackers[0],b2))[0]
+||G.entities.filter(e=>isEnemy(aiTeam,e.team)&&e.hp>0).sort((a,b2)=>d2p(attackers[0],a)-d2p(attackers[0],b2))[0];
 } else {
-target=G.entities.filter(e=>e.team===TP&&e.hp>0).sort((a,b2)=>d2p(attackers[0],a)-d2p(attackers[0],b2))[0];
+target=G.entities.filter(e=>isEnemy(aiTeam,e.team)&&e.hp>0).sort((a,b2)=>d2p(attackers[0],a)-d2p(attackers[0],b2))[0];
 }
 if(target)attackers.forEach(f=>{
 if(f.state==='idle'||(f.state!=='attack'&&Math.random()<cfg.atkReroute)){
@@ -1116,42 +1134,52 @@ u.path=fp(u.x,u.y,gx,gy);
 
 // Defend: react to nearby enemies
 us.filter(u=>u.state==='idle'&&u.dmg>0).forEach(u=>{
-const nearby=findEnemy(u.x,u.y,TILE*cfg.defRange,TE);
+const nearby=findEnemy(u.x,u.y,TILE*cfg.defRange,aiTeam);
 if(nearby){u.target=nearby;u.state='attack';u.path=fp(u.x,u.y,nearby.x,nearby.y);}
 });
 }
-function aiBld(type,cony){
-const d=BD[type];if(G.credits[TE]<d.cost)return;
+function aiBld(type,cony,aiTeam){
+if(aiTeam===undefined)aiTeam=TE;
+const d=BD[type];if(G.credits[aiTeam]<d.cost)return;
 for(let r=1;r<12;r++)for(let a=0;a<8;a++){
 const tx=cony.tx+Math.round(Math.cos(a*Math.PI/4)*r*3);
 const ty=cony.ty+Math.round(Math.sin(a*Math.PI/4)*r*3);
-if(canPlace(type,tx,ty,TE)){G.credits[TE]-=d.cost;mkBldg(type,TE,tx,ty,false);upPow();return;}
+if(canPlace(type,tx,ty,aiTeam)){G.credits[aiTeam]-=d.cost;mkBldg(type,aiTeam,tx,ty,false);upPow();return;}
 }
 }
 // Place a building (especially turrets) near important friendly buildings
-function aiBldNear(type,cony,bs){
-const d=BD[type];if(G.credits[TE]<d.cost)return;
+function aiBldNear(type,cony,bs,aiTeam){
+if(aiTeam===undefined)aiTeam=TE;
+const d=BD[type];if(G.credits[aiTeam]<d.cost)return;
 // Prefer anchoring to refinery or ConYard — places with economic/strategic value
 const anchors=[...bs.filter(b=>b.type==='Refinery'||b.type==='ConYard'),cony];
 for(const anchor of anchors){
 for(let r=1;r<8;r++)for(let a=0;a<8;a++){
 const tx=anchor.tx+Math.round(Math.cos(a*Math.PI/4)*r*2);
 const ty=anchor.ty+Math.round(Math.sin(a*Math.PI/4)*r*2);
-if(canPlace(type,tx,ty,TE)){G.credits[TE]-=d.cost;mkBldg(type,TE,tx,ty,false);upPow();return;}
+if(canPlace(type,tx,ty,aiTeam)){G.credits[aiTeam]-=d.cost;mkBldg(type,aiTeam,tx,ty,false);upPow();return;}
 }
 }
-aiBld(type,cony);
+aiBld(type,cony,aiTeam);
 }
-function aiQ(b,type){const d=UD[type];if(G.credits[TE]<d.cost)return;G.credits[TE]-=d.cost;if(!b.bq)b.bq=[];b.bq.push({type,prog:0,bt:d.bt});}
+function aiQ(b,type,aiTeam){if(aiTeam===undefined)aiTeam=TE;const d=UD[type];if(G.credits[aiTeam]<d.cost)return;G.credits[aiTeam]-=d.cost;if(!b.bq)b.bq=[];b.bq.push({type,prog:0,bt:d.bt});}
 function checkVic(){
-const pb=G.entities.filter(e=>e.isBuilding&&e.team===TP);
-const eb=G.entities.filter(e=>e.isBuilding&&e.team===TE);
-if(!pb.length){
-if(MP.mode==='host'&&MP.connected) MP.conn.send(JSON.stringify({t:'gameover',win:1}));
+if(G.gameOver)return;
+const np=MP.numPlayers||2;
+// Find which teams still have buildings
+const aliveTeams=[];
+for(let t=0;t<np;t++){if(G.entities.some(e=>e.isBuilding&&e.team===t&&e.hp>0))aliveTeams.push(t);}
+if(aliveTeams.length===0)return;
+// Check if all alive teams are allied to myTeam
+const myAllies=G.allies&&G.allies[MP.myTeam]||[MP.myTeam];
+const allAllied=aliveTeams.every(t=>myAllies.includes(t));
+if(allAllied){
+const winTeams=aliveTeams;
+if(MP.mode==='host')mpSendAll({t:'gameover',winTeams});
+showOv(winTeams.includes(MP.myTeam));
+} else if(!aliveTeams.includes(MP.myTeam)&&!myAllies.some(t=>aliveTeams.includes(t))){
+if(MP.mode==='host')mpSendAll({t:'gameover',winTeams:aliveTeams});
 showOv(false);
-} else if(!eb.length){
-if(MP.mode==='host'&&MP.connected) MP.conn.send(JSON.stringify({t:'gameover',win:0}));
-showOv(true);
 }
 }
 function showOv(w){
@@ -1162,10 +1190,17 @@ document.getElementById('overlayText').textContent=w?'VICTORY':'DEFEAT';
 o.style.display='flex';
 if(G.stats){
 const s=G.stats;
-const myIdx=MP.myTeam;
-const opIdx=myIdx===TP?TE:TP;
+const np=MP.numPlayers||2;
+const teamNames=['Blue','Red','Green','Yellow'];
 const os=document.getElementById('overlayStats');
-if(os)os.innerHTML=`<div>Units killed: ${s.kills[myIdx]} · Buildings destroyed: ${s.bldgsKilled[myIdx]}</div><div style="color:#888;font-size:11px">Opponent — Units: ${s.kills[opIdx]} · Buildings: ${s.bldgsKilled[opIdx]}</div>`;
+if(os){
+let html='';
+for(let t=0;t<np;t++){
+const dot=['#4488ff','#ff4444','#44aa44','#cccc44'][t];
+html+=`<div style="font-size:12px;margin:2px 0"><span style="color:${dot}">■ ${teamNames[t]}</span> — Units: ${s.kills[t]} · Bldgs: ${s.bldgsKilled[t]}</div>`;
+}
+os.innerHTML=html;
+}
 }
 }
 
@@ -1174,10 +1209,11 @@ function updateFog(){
 if(!G.fog||!G.entities)return;
 // Decay visible to explored
 for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++)if(G.fog[y][x]===2)G.fog[y][x]=1;
-// Mark tiles visible around player's units and buildings
+// Mark tiles visible around player's units and buildings (including allies for 2v2)
 const sightRange=6;
+const visTeams=G.allies&&G.allies[MP.myTeam]||[MP.myTeam];
 for(const e of G.entities){
-if(e.team!==MP.myTeam||e.hp<=0)continue;
+if(!visTeams.includes(e.team)||e.hp<=0)continue;
 const tx=Math.round(e.x/TILE),ty=Math.round(e.y/TILE);
 const r=e.isBuilding?sightRange+1:sightRange;
 for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
@@ -1189,7 +1225,7 @@ if(nx>=0&&nx<MAP_W&&ny>=0&&ny<MAP_H)G.fog[ny][nx]=2;
 }
 
 // ─── RENDER ───────────────────────────────────────────
-const BC={[TP]:{f:'#2244aa',b:'#4488ff',d:'#112266'},[TE]:{f:'#aa2222',b:'#ff4444',d:'#661111'}};
+const BC={[TP]:{f:'#2244aa',b:'#4488ff',d:'#112266'},[TE]:{f:'#aa2222',b:'#ff4444',d:'#661111'},2:{f:'#227722',b:'#44aa44',d:'#114411'},3:{f:'#888822',b:'#cccc44',d:'#444411'}};
 let previewTX=0,previewTY=0,selBox=null,selStart=null,isDragging=false;
 
 function gz(){return G.camera?.zoom||1;}
@@ -1215,7 +1251,7 @@ for(let y=sy;y<=ey;y++){ctx.beginPath();ctx.moveTo(sx*TILE,y*TILE);ctx.lineTo(ex
 
 // Building placement preview
 if(G.placingBuilding&&previewTX>=0){
-const d=BD[G.placingBuilding],ok=canPlace(G.placingBuilding,previewTX,previewTY,TP);
+const d=BD[G.placingBuilding],ok=canPlace(G.placingBuilding,previewTX,previewTY,MP.myTeam);
 ctx.fillStyle=ok?'rgba(0,120,255,0.35)':'rgba(255,0,0,0.35)';
 ctx.fillRect(previewTX*TILE,previewTY*TILE,d.w*TILE,d.h*TILE);
 ctx.strokeStyle=ok?'#00aaff':'#f00'; ctx.lineWidth=2;
@@ -1236,8 +1272,9 @@ ctx.setLineDash([]);
 for(const e of G.entities){
 if(e.hp<=0)continue;
 if(!inView(e,cam,z))continue;
-// Fog of war: skip enemy entities in fog
-if(G.fog&&e.team!==MP.myTeam){
+// Fog of war: skip enemy entities in fog (allies are always visible)
+const _visTeams=G.allies&&G.allies[MP.myTeam]||[MP.myTeam];
+if(G.fog&&!_visTeams.includes(e.team)){
 const etx=e.isBuilding?e.tx:~~(e.x/TILE);
 const ety=e.isBuilding?e.ty:~~(e.y/TILE);
 if((G.fog[ety]?.[etx]??0)<2)continue;
@@ -1246,10 +1283,12 @@ if(e.isBuilding)drawBldg(e); else drawUnit(e);
 }
 
 // Projectiles
+const projColors=['#aaff00','#ff4400','#44ffaa','#ffff44'];
+const projColorsDim=['rgba(170,255,0,0.25)','rgba(255,68,0,0.25)','rgba(68,255,170,0.25)','rgba(255,255,68,0.25)'];
 for(const p of G.projectiles){
-ctx.fillStyle=dispTeam(p.team)===TP?'#aaff00':'#ff4400';
+ctx.fillStyle=projColors[p.team]||'#ffffff';
 ctx.beginPath(); ctx.arc(p.x,p.y,3,0,Math.PI*2); ctx.fill();
-ctx.fillStyle=dispTeam(p.team)===TP?'rgba(170,255,0,0.25)':'rgba(255,68,0,0.25)';
+ctx.fillStyle=projColorsDim[p.team]||'rgba(255,255,255,0.25)';
 ctx.beginPath(); ctx.arc(p.x-p.vx*.01,p.y-p.vy*.01,2,0,Math.PI*2); ctx.fill();
 }
 
@@ -1274,16 +1313,18 @@ ctx.globalAlpha=1;
 if(G.moveMarkers){
 for(const m of G.moveMarkers){
 const a=m.life,r2=12*(1-m.life*0.5);
-ctx.strokeStyle=dispTeam(m.team)===TP?`rgba(0,200,255,${a})`:`rgba(255,100,0,${a})`;
+const mmColors=['rgba(0,200,255,','rgba(255,100,0,','rgba(0,255,150,','rgba(255,255,0,'];
+ctx.strokeStyle=(mmColors[m.team]||'rgba(200,200,200,')+a+')';
 ctx.lineWidth=2;
 ctx.beginPath();ctx.arc(m.x,m.y,r2,0,Math.PI*2);ctx.stroke();
 ctx.beginPath();ctx.arc(m.x,m.y,r2*0.4,0,Math.PI*2);ctx.stroke();
 }
 }
 
-// Rally point flags for player buildings
+// Rally point flags for player buildings (including allies in 2v2)
+const _visTeams2=G.allies&&G.allies[MP.myTeam]||[MP.myTeam];
 for(const e of G.entities){
-if(e.isBuilding&&e.complete&&e.team===MP.myTeam&&e.rally){
+if(e.isBuilding&&e.complete&&_visTeams2.includes(e.team)&&e.rally){
 ctx.font='14px serif';ctx.textAlign='left';ctx.textBaseline='alphabetic';
 ctx.fillText('🚩',e.rally.x-8,e.rally.y+6);
 }
@@ -1313,6 +1354,8 @@ renderMM();
 const TPAL={
 [TP]:{ base:'#607898', lite:'#8aaac8', mid:'#405870', dark:'#202e40', acc:'#b8d8f0', stripe:'#2858a0', glass:'rgba(110,165,220,0.4)', steel:'#8090a8', rivet:'#4a5a70' },
 [TE]:{ base:'#986060', lite:'#c88888', mid:'#784040', dark:'#3a1818', acc:'#f8b8b8', stripe:'#a82020', glass:'rgba(220,110,110,0.4)', steel:'#a87878', rivet:'#703838' },
+2:{ base:'#607860', lite:'#8ac88a', mid:'#405840', dark:'#202e20', acc:'#b8f0b8', stripe:'#287828', glass:'rgba(110,220,110,0.4)', steel:'#80a880', rivet:'#4a704a' },
+3:{ base:'#787860', lite:'#c8c88a', mid:'#585840', dark:'#2e2e20', acc:'#f0f0b8', stripe:'#888828', glass:'rgba(220,220,110,0.4)', steel:'#a8a880', rivet:'#70704a' },
 };
 
 // ── Drawing primitives ──
@@ -2230,7 +2273,7 @@ mctx.fillRect(~~(x*mw/MAP_W),~~(y*mh/MAP_H),Math.ceil(mw/MAP_W)+1,Math.ceil(mh/M
 }
 for(const e of G.entities){
 if(e.hp<=0)continue;
-mctx.fillStyle=dispTeam(e.team)===TP?'#4488ff':'#ff4444';
+mctx.fillStyle=['#4488ff','#ff4444','#44aa44','#cccc44'][e.team]||'#aaaaaa';
 if(e.isBuilding){const d=BD[e.type];mctx.fillRect(~~(e.tx*mw/MAP_W),~~(e.ty*mh/MAP_H),~~(d.w*mw/MAP_W)+1,~~(d.h*mh/MAP_H)+1);}
 else mctx.fillRect(~~(e.x/PW*mw)-1,~~(e.y/PH*mh)-1,3,3);
 }
@@ -2261,12 +2304,14 @@ let tagTxt=MP.mode==='host'?'🖥 HOST':'🔗 CLIENT';
 // Desync warning for client
 if(MP.mode==='client'&&Date.now()-MP.lastStateAt>2500&&MP.lastStateAt>0){tagTxt+=' ⚠ LAG';}
 tag.textContent=tagTxt;
-tag.style.background=mt===TP?'#1a3a6a':'#5a0000';
-tag.style.color=mt===TP?'#88ccff':'#ffaaaa';
+const tagBgs=['#1a3a6a','#5a0000','#0a3a0a','#3a3a00'];
+const tagFgs=['#88ccff','#ffaaaa','#88ff88','#ffff88'];
+tag.style.background=tagBgs[mt]||'#1a1a1a';
+tag.style.color=tagFgs[mt]||'#cccccc';
 } else tag.style.display='none';
 // Ping indicator
 const pingEl=document.getElementById('pingTxt');
-if(MP.mode==='host'&&MP.connected){
+if(MP.mode==='host'&&MP.conns.some(c=>c&&c.open)){
 pingEl.style.display='';
 const p=MP.ping;
 pingEl.textContent=`📶 ${p}ms`;
@@ -2641,7 +2686,7 @@ const tc=t[0];
 const{x:wx,y:wy}=getWXY(tc.clientX,tc.clientY);
 previewTX=~~(wx/TILE);previewTY=~~(wy/TILE);
 // Check if finger is ON a unit — if so, don't pan
-const onUnit=findAt(wx,wy,TP);
+const onUnit=findAt(wx,wy,MP.myTeam);
 pStart={x:tc.clientX,y:tc.clientY,cx:G.camera.x,cy:G.camera.y,wx,wy,onUnit:!!onUnit};
 isDragging=false; touchSelBox=null;
 lpTimer=setTimeout(()=>{lpTimer=null;longPress(tc.clientX,tc.clientY);},480);
@@ -2871,68 +2916,135 @@ const MP_CFG={debug:2,config:{iceServers:[
 ]}};
 
 function mpHost(){
-mpLobby('<span style="color:#aaa;font-size:12px">Creating room…</span>');
-// Short human-friendly ID: 6 uppercase alphanumeric chars
+// Show config lobby before creating peer
+MP.mode='host'; MP.myTeam=TP; MP.conns=[];
+MP.numPlayers=2; MP.gameMode='ffa';
+MP.aiSlots=[]; // will be set when CREATE ROOM is clicked
+_mpShowHostConfig();
+}
+function _mpSlotDiff(team){
+const s=MP.aiSlots.find(x=>x.team===team);
+return s?s.diff:null;
+}
+function _mpSetSlot(team,diff){
+MP.aiSlots=MP.aiSlots.filter(x=>x.team!==team);
+if(diff)MP.aiSlots.push({team,diff,timer:0});
+_mpUpdateLobbySlots();
+}
+function _mpShowHostConfig(){
+mpLobby(`
+<div style="color:#ffaaaa;font-size:11px;letter-spacing:1px;margin-bottom:8px">HOST GAME</div>
+<div style="display:flex;gap:6px;justify-content:center;margin-bottom:8px">
+<span style="color:#888;font-size:11px;align-self:center">Players:</span>
+<button id="mpNp2" class="start-btn" style="padding:5px 12px;font-size:11px" onclick="MP.numPlayers=2;_mpHighlightNp()">2P</button>
+<button id="mpNp3" class="start-btn" style="padding:5px 12px;font-size:11px" onclick="MP.numPlayers=3;_mpHighlightNp()">3P</button>
+<button id="mpNp4" class="start-btn" style="padding:5px 12px;font-size:11px" onclick="MP.numPlayers=4;_mpHighlightNp()">4P</button>
+</div>
+<div id="mpModeRow" style="display:none;gap:6px;justify-content:center;margin-bottom:8px">
+<span style="color:#888;font-size:11px;align-self:center">Mode:</span>
+<button id="mpFfa" class="start-btn" style="padding:5px 12px;font-size:11px" onclick="MP.gameMode='ffa';_mpHighlightMode()">FFA</button>
+<button id="mp2v2" class="start-btn" style="padding:5px 12px;font-size:11px" onclick="MP.gameMode='2v2';_mpHighlightMode()">2v2</button>
+</div>
+<button class="start-btn" style="padding:10px 28px;font-size:12px;margin-top:6px" onclick="mpStartHosting()">CREATE ROOM</button>
+`);
+setTimeout(_mpHighlightNp,10);
+}
+function _mpHighlightNp(){
+['mpNp2','mpNp3','mpNp4'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.borderColor=id==='mpNp'+MP.numPlayers?'#ff4444':'#440000';});
+const mr=document.getElementById('mpModeRow');if(mr)mr.style.display=MP.numPlayers===4?'flex':'none';
+if(MP.numPlayers!==4)MP.gameMode='ffa';
+_mpHighlightMode();
+}
+function _mpHighlightMode(){
+['mpFfa','mp2v2'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.borderColor=(id==='mpFfa'&&MP.gameMode==='ffa')||(id==='mp2v2'&&MP.gameMode==='2v2')?'#ff4444':'#440000';});
+}
+function mpStartHosting(){
 const shortId='RA-'+Math.random().toString(36).slice(2,8).toUpperCase();
 console.log('[MP] HOST: creating peer id='+shortId);
+// Default unset slots to AI medium
+for(let t=1;t<MP.numPlayers;t++){if(!MP.aiSlots.find(s=>s.team===t))MP.aiSlots.push({team:t,diff:'medium',timer:0});}
+mpLobby('<span style="color:#aaa;font-size:12px">Creating room…</span>');
 const peer=new Peer(shortId,MP_CFG);
-MP.peer=peer; MP.mode='host'; MP.myTeam=TP;
-// Timeout: signaling server must respond within 12s
-const sigTimeout=setTimeout(()=>{
-if(!peer.id){
-console.error('[MP] HOST: signaling server timeout — peer.open never fired');
-mpLobby(`<span style="color:#f44;font-size:12px">Timeout: could not reach signaling server — try refreshing</span>`);
-}
-},12000);
-const showCode=()=>{
+MP.peer=peer;
+const sigTimeout=setTimeout(()=>{if(!peer.id)mpLobby(`<span style="color:#f44;font-size:12px">Timeout — try refreshing</span>`);},12000);
+peer.on('open',()=>{
 clearTimeout(sigTimeout);
 const id=peer.id;
-console.log('[MP] HOST: signaling open, assigned id='+id);
-document.getElementById('mpLobby').innerHTML=`<div style="color:#ffaaaa;font-size:11px;letter-spacing:1px;margin-bottom:4px">ROOM CODE</div><div style="font-family:Orbitron,sans-serif;font-size:22px;color:#fff;letter-spacing:4px;padding:8px 18px;border:1px solid #cc0000;background:#1a0000;margin:4px auto 6px;display:inline-block;cursor:pointer;user-select:all" title="Click to copy">${id}</div><br><button class="start-btn" style="padding:8px 22px;font-size:12px;margin-top:2px" id="mpCopyBtn" onclick="navigator.clipboard.writeText('${id}').then(()=>{this.textContent='✅ Copied!';setTimeout(()=>this.textContent='📋 Copy Code',2000)},()=>{document.getElementById('mpFallback').select();document.execCommand('copy')})">📋 Copy Code</button><input id="mpFallback" value="${id}" readonly style="opacity:0;position:absolute;pointer-events:none;width:1px"><div style="color:#ff8888;font-size:11px;margin-top:8px" id="mpWaitTxt">⏳ Waiting for opponent…</div>`;
-};
-peer.on('open',showCode);
-// Keep peer registered on the signaling server — reconnect if dropped
-peer.on('disconnected',()=>{
-console.warn('[MP] HOST: signaling disconnected — attempting reconnect');
-const wt=document.getElementById('mpWaitTxt');
-if(wt)wt.textContent='🔄 Reconnecting…';
-setTimeout(()=>{if(!MP.connected)peer.reconnect();},1000);
+console.log('[MP] HOST: signaling open, id='+id);
+_mpRenderLobby(id);
 });
+peer.on('disconnected',()=>{setTimeout(()=>{if(MP.mode==='host'&&!G.entities?.length)peer.reconnect();},1000);});
 peer.on('connection',conn=>{
-console.log('[MP] HOST: incoming connection from peer='+conn.peer);
-MP.conn=conn;
-const wt=document.getElementById('mpWaitTxt');
-if(wt)wt.textContent='🔗 Opponent found, establishing connection…';
+console.log('[MP] HOST: incoming connection slot='+(MP.conns.length+1));
+const team=MP.conns.length+1;
+if(team>=MP.numPlayers){conn.on('open',()=>{try{conn.send(JSON.stringify({t:'full'}));}catch(_){}});return;}
+MP.conns.push(conn);
+// Remove AI slot for this human
+MP.aiSlots=MP.aiSlots.filter(s=>s.team!==team);
 conn.on('open',()=>{
-console.log('[MP] HOST: conn.open — WebRTC channel established');
+console.log('[MP] HOST: conn open team='+team);
 MP.connected=true;
-conn.on('data',d=>mpHandleAction(JSON.parse(d)));
-conn.on('close',()=>{
-console.warn('[MP] HOST: conn.close — opponent disconnected');
-MP.connected=false;showMsg('⚠️ Opponent disconnected');
+conn.on('data',d=>mpHandleAction(JSON.parse(d),team));
+conn.on('close',()=>{console.warn('[MP] HOST: client team='+team+' disconnected');showMsg('⚠️ Player '+team+' disconnected');});
+_mpUpdateLobbySlots();
+// Start ping timer for this connection
+setInterval(()=>{if(conn.open)try{conn.send(JSON.stringify({t:'ping',ts:Date.now()}));}catch(_){}},2000);
 });
-// Show ready overlay on host side
-document.getElementById('splash').style.display='none';
-document.getElementById('mpLobby').style.display='none';
-const ro=document.getElementById('readyOverlay');
-ro.style.display='flex';
-// Start ping timer
-setInterval(()=>{if(MP.conn&&MP.connected)try{MP.conn.send(JSON.stringify({t:'ping',ts:Date.now()}));}catch(_){}},2000);
-});
-conn.on('error',err=>{
-console.error('[MP] HOST: conn error type='+err.type,err);
-showMsg('⚠️ Connection error: '+err.type);
-});
+conn.on('error',err=>{showMsg('⚠️ Conn error: '+err.type);});
 });
 peer.on('error',err=>{
 console.error('[MP] HOST: peer error type='+err.type,err);
-if(err.type==='unavailable-id'){
-// ID collision (very rare) — retry with a new one
-MP.peer=null; peer.destroy(); mpHost();
-} else {
-mpLobby(`<span style="color:#f44;font-size:12px">Error: ${err.type} — try refreshing</span>`);
-}
+if(err.type==='unavailable-id'){MP.peer=null;peer.destroy();mpStartHosting();}
+else mpLobby(`<span style="color:#f44;font-size:12px">Error: ${err.type} — try refreshing</span>`);
 });
+}
+function _mpRenderLobby(id){
+const el=document.getElementById('mpLobby');
+el.style.display='block';
+el.innerHTML=`<div style="color:#ffaaaa;font-size:11px;letter-spacing:1px;margin-bottom:4px">ROOM CODE</div>
+<div style="font-family:Orbitron,sans-serif;font-size:20px;color:#fff;letter-spacing:4px;padding:6px 16px;border:1px solid #cc0000;background:#1a0000;margin:4px auto 6px;display:inline-block;cursor:pointer;user-select:all" title="Click to copy">${id}</div>
+<button class="start-btn" style="padding:6px 16px;font-size:11px;margin-left:6px" onclick="navigator.clipboard.writeText('${id}').then(()=>{this.textContent='✅';setTimeout(()=>this.textContent='📋',1500)},()=>{})">📋</button>
+<div id="mpSlotList" style="margin-top:8px;text-align:left;max-width:320px;margin-left:auto;margin-right:auto"></div>
+<button class="start-btn" id="mpStartBtn" style="padding:10px 28px;font-size:12px;margin-top:10px" onclick="mpStartGame()">▶ START GAME</button>`;
+_mpUpdateLobbySlots();
+}
+function _mpUpdateLobbySlots(){
+const el=document.getElementById('mpSlotList');if(!el)return;
+const teamNames=['Blue','Red','Green','Yellow'];
+const teamColors=['#4488ff','#ff4444','#44aa44','#cccc44'];
+let html='';
+for(let t=0;t<MP.numPlayers;t++){
+const color=teamColors[t];
+const isHuman=t===0||MP.conns[t-1]?.open;
+const isAI=MP.aiSlots.some(s=>s.team===t);
+if(t===0){
+html+=`<div style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:11px"><span style="color:${color}">■ ${teamNames[t]}</span> <span style="color:#aaa">— YOU (host)</span></div>`;
+} else if(isHuman&&!isAI){
+html+=`<div style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:11px"><span style="color:${color}">■ ${teamNames[t]}</span> <span style="color:#aaa">✓ Connected (Player)</span></div>`;
+} else {
+const diff=_mpSlotDiff(t)||'medium';
+html+=`<div style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:11px"><span style="color:${color}">■ ${teamNames[t]}</span>
+<button class="start-btn" style="padding:2px 7px;font-size:9px;border-color:${diff?'#ff4444':'#440000'}" onclick="_mpSetSlot(${t},'easy')">Easy</button>
+<button class="start-btn" style="padding:2px 7px;font-size:9px;border-color:${diff==='medium'?'#ff4444':'#440000'}" onclick="_mpSetSlot(${t},'medium')">Med</button>
+<button class="start-btn" style="padding:2px 7px;font-size:9px;border-color:${diff==='hard'?'#ff4444':'#440000'}" onclick="_mpSetSlot(${t},'hard')">Hard</button>
+<button class="start-btn" style="padding:2px 7px;font-size:9px;border-color:${diff==='amazing'?'#ff4444':'#440000'}" onclick="_mpSetSlot(${t},'amazing')">Amaz</button>
+<button class="start-btn" style="padding:2px 7px;font-size:9px;border-color:${!diff?'#ff4444':'#440000'}" onclick="MP.aiSlots=MP.aiSlots.filter(s=>s.team!==${t});_mpUpdateLobbySlots()">Wait</button>
+</div>`;
+}
+}
+el.innerHTML=html;
+}
+function mpStartGame(){
+document.getElementById('splash').style.display='none';
+startGame();
+// Send init to each connected client
+for(let i=0;i<MP.conns.length;i++){
+const team=i+1;
+const c=MP.conns[i];
+if(c&&c.open){
+try{c.send(JSON.stringify({t:'init',map:G.map,e:mpSerEnt(),cr:G.credits,po:G.power,pu2:G.pu,ti:0,myTeam:team,allies:G.allies,numPlayers:MP.numPlayers,aiSlots:G.aiSlots.map(s=>({team:s.team,diff:s.diff}))}));}catch(_){}
+}
+}
 }
 
 function mpShowJoin(){
@@ -2946,82 +3058,72 @@ if(!code){showMsg('Enter the room code!');return;}
 console.log('[MP] JOIN: starting join for code='+code);
 mpLobby('<span style="color:#aaa;font-size:12px" id="mpStatus">1/3 Reaching signaling server…</span>');
 const peer=new Peer(undefined,MP_CFG);
-MP.peer=peer; MP.mode='client'; MP.myTeam=TE; MP._joinCode=code;
+MP.peer=peer; MP.mode='client'; MP._joinCode=code; MP.conns=[];
 let reconnectAttempts=0;
-// Timeout: signaling server must respond within 12s
-const sigTimeout=setTimeout(()=>{
-if(!peer.id){
-console.error('[MP] JOIN: signaling server timeout — peer.open never fired');
-mpLobby(`<span style="color:#f44;font-size:12px">Timeout: could not reach signaling server — try refreshing</span>`);
-}
-},12000);
+const sigTimeout=setTimeout(()=>{if(!peer.id)mpLobby(`<span style="color:#f44;font-size:12px">Timeout — try refreshing</span>`);},12000);
 function doConnect(){
 console.log('[MP] JOIN: connecting to host code='+code+' attempt='+(reconnectAttempts+1));
 const conn=peer.connect(code,{reliable:true});
 MP.conn=conn;
 conn.on('open',()=>{
-console.log('[MP] JOIN: conn.open — WebRTC channel established');
-MP.connected=true;
-reconnectAttempts=0;
-// Show ready overlay
+console.log('[MP] JOIN: conn.open established');
+MP.connected=true; reconnectAttempts=0;
 document.getElementById('splash').style.display='none';
 document.getElementById('mpLobby').style.display='none';
-const recon=document.getElementById('mpReconOverlay');
-if(recon)recon.remove();
-const ro=document.getElementById('readyOverlay');
-ro.style.display='flex';
+const recon=document.getElementById('mpReconOverlay');if(recon)recon.remove();
+mpLobby('<span style="color:#aaa;font-size:12px">⏳ Waiting for host to start…</span>');
+document.getElementById('mpLobby').style.display='block';
+document.getElementById('splash').style.display='flex';
 });
 conn.on('data',d=>{
 const msg=JSON.parse(d);
 if(msg.t==='init'){
-console.log('[MP] JOIN: received init — starting game');
+console.log('[MP] JOIN: received init, myTeam='+msg.myTeam);
 document.getElementById('splash').style.display='none';
 document.getElementById('readyOverlay').style.display='none';
+// Store multi-team info before initGame
+MP.myTeam=msg.myTeam||TE;
+MP.numPlayers=msg.numPlayers||2;
+MP.gameMode=msg.gameMode||'ffa';
+MP.aiSlots=(msg.aiSlots||[]).map(s=>({team:s.team,diff:s.diff,timer:0}));
 initGame();
 G.map=msg.map; terrainCacheDirty=true;
+G.allies=msg.allies||buildAllies(MP.numPlayers,MP.gameMode);
+G.aiSlots=MP.aiSlots.map(s=>Object.assign({},s));
 mpApplyState(msg);
 setupBuildPanel(); resizeCanvas();
 G.camera.zoom=window.innerWidth<600?.7:1;
-// Sync camera to TE base
-const teCony=G.entities.find(e=>e.isBuilding&&e.type==='ConYard'&&e.team===TE);
-if(teCony){
-G.camera.x=Math.max(0,teCony.tx*TILE-canvas.width/(2*G.camera.zoom));
-G.camera.y=Math.max(0,teCony.ty*TILE-canvas.height/(2*G.camera.zoom));
-} else {
-G.camera.x=PW-canvas.width/(G.camera.zoom);G.camera.y=PH-canvas.height/(G.camera.zoom);
-}
+const myCony=G.entities.find(e=>e.isBuilding&&e.type==='ConYard'&&e.team===MP.myTeam);
+if(myCony){G.camera.x=Math.max(0,myCony.tx*TILE-canvas.width/(2*G.camera.zoom));G.camera.y=Math.max(0,myCony.ty*TILE-canvas.height/(2*G.camera.zoom));}
+else{G.camera.x=PW-canvas.width/G.camera.zoom;G.camera.y=PH-canvas.height/G.camera.zoom;}
 if(!G._loopStarted){G._loopStarted=true;scrollCamera();requestAnimationFrame(gameLoop);}
 playSound('ready');
-showMsg('⚔️ Connected! You are RED — destroy the BLUE base!');
+const teamNames=['Blue','Red','Green','Yellow'];
+showMsg(`⚔️ Connected! You are ${teamNames[MP.myTeam]} — destroy the enemies!`);
 setTimeout(()=>showMsg('💡 Click your buildings to produce units'),2400);
 } else if(msg.t==='state'){
-MP.lastStateAt=Date.now();
-mpApplyState(msg);
+MP.lastStateAt=Date.now(); mpApplyState(msg);
 } else if(msg.t==='gameover'){
-G.gameOver=true; showOv(msg.win===1);
+G.gameOver=true; showOv(msg.winTeams?msg.winTeams.includes(MP.myTeam):(msg.win===0));
 } else if(msg.t==='chat'){
-chatLog('OPP: '+msg.msg,'chat-opp');
+const from=msg.from!==undefined?msg.from:'?';
+chatLog(`P${from}: ${msg.msg}`,'chat-opp');
 } else if(msg.t==='ping'){
 try{MP.conn.send(JSON.stringify({t:'pong',ts:msg.ts}));}catch(_){}
-} else if(msg.t==='ready'){
-// handled by host
+} else if(msg.t==='full'){
+showMsg('⚠️ Room is full!');
 }
 });
 conn.on('close',()=>{
 console.warn('[MP] JOIN: conn.close reconnectAttempts='+reconnectAttempts);
 MP.connected=false;
 if(reconnectAttempts>=5){showMsg('⚠️ Could not reconnect');return;}
-// Show reconnect overlay
 let ro2=document.getElementById('mpReconOverlay');
 if(!ro2){ro2=document.createElement('div');ro2.id='mpReconOverlay';ro2.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.88);display:flex;align-items:center;justify-content:center;z-index:950;color:#ff8888;font-family:Orbitron,sans-serif;font-size:18px;letter-spacing:2px;';ro2.textContent='⚡ Connection lost — reconnecting…';document.body.appendChild(ro2);}
 reconnectAttempts++;
-setTimeout(()=>{
-if(!MP.connected)doConnect();
-},3000);
+setTimeout(()=>{if(!MP.connected)doConnect();},3000);
 });
-conn.on('error',err=>{
-console.error('[MP] JOIN: conn error type='+err.type,err);
-});
+conn.on('error',err=>{console.error('[MP] JOIN: conn error type='+err.type,err);});
 }
 peer.on('open',(id)=>{
 clearTimeout(sigTimeout);
@@ -3036,17 +3138,7 @@ mpLobby(`<span style="color:#f44;font-size:12px">Error: ${err.type} — check th
 }
 
 function sendReady(){
-// Called by client when they press ready
-if(MP.mode==='client'&&MP.conn&&MP.connected){
-try{MP.conn.send(JSON.stringify({t:'ready'}));}catch(_){}
-document.getElementById('readyOverlay').style.display='none';
-showMsg('⚔️ Waiting for game to start…');
-} else if(MP.mode==='host'){
-// Host pressed ready locally — start game
-document.getElementById('readyOverlay').style.display='none';
-startGame();
-setTimeout(()=>{if(MP.conn)MP.conn.send(JSON.stringify({t:'init',map:G.map,e:mpSerEnt(),cr:G.credits,po:G.power,pu2:G.pu,ti:0}));},300);
-}
+// Legacy — no-op in new flow, kept for safety
 }
 
 function mpSerEnt(){
@@ -3066,8 +3158,8 @@ rally:e.rally||null,
 }
 
 function mpSendState(){
-if(!MP.conn)return;
-try{MP.conn.send(JSON.stringify({t:'state',e:mpSerEnt(),cr:G.credits,po:G.power,pu2:G.pu,ti:~~G.time,go:G.gameOver?1:0,pr:G.projectiles.map(p=>({x:~~p.x,y:~~p.y,vx:~~p.vx,vy:~~p.vy,life:p.life,team:p.team}))}));}catch(_){}
+if(!MP.conns||!MP.conns.length)return;
+mpSendAll({t:'state',e:mpSerEnt(),cr:G.credits,po:G.power,pu2:G.pu,ti:~~G.time,go:G.gameOver?1:0,pr:G.projectiles.map(p=>({x:~~p.x,y:~~p.y,vx:~~p.vx,vy:~~p.vy,life:p.life,team:p.team}))});
 }
 
 function mpApplyState(msg){
@@ -3086,59 +3178,61 @@ G.selected=G.entities.filter(e=>selIds.has(e.id)&&e.hp>0);
 updateFog();
 }
 
-function mpHandleAction(msg){
+function mpHandleAction(msg,senderTeam){
+if(senderTeam===undefined)senderTeam=TE;
 if(msg.t==='order'){
-const units=G.entities.filter(e=>msg.ids&&msg.ids.includes(e.id)&&e.team===TE&&e.isUnit&&e.hp>0);
+const units=G.entities.filter(e=>msg.ids&&msg.ids.includes(e.id)&&e.team===senderTeam&&e.isUnit&&e.hp>0);
 if(!units.length)return;
-const enemy=findAt(msg.wx,msg.wy,TP);
-const fb=msg.repairId?G.entities.find(e=>e.id===msg.repairId&&e.team===TE&&e.isBuilding):findFriendlyBldgAt(msg.wx,msg.wy,TE);
+const enemy=findAt(msg.wx,msg.wy,myEnemyOf(senderTeam));
+const fb=msg.repairId?G.entities.find(e=>e.id===msg.repairId&&e.team===senderTeam&&e.isBuilding):findFriendlyBldgAt(msg.wx,msg.wy,senderTeam);
 units.forEach((sel,i)=>{
 if(sel.type==='Repairman'&&fb){sel.repairTarget=fb;sel.state='repair';sel.path=fp(sel.x,sel.y,fb.x,fb.y);}
 else if(enemy&&sel.dmg>0){sel.target=enemy;sel.state='attack';sel.path=fp(sel.x,sel.y,enemy.x,enemy.y);}
 else{const jx=(i%4-2)*TILE*.8,jy=(~~(i/4)-1)*TILE*.8;sel.target=null;sel.state='move';sel.path=fp(sel.x,sel.y,msg.wx+jx,msg.wy+jy);}
 });
 } else if(msg.t==='attackmove'){
-const units=G.entities.filter(e=>msg.ids&&msg.ids.includes(e.id)&&e.team===TE&&e.isUnit&&e.hp>0);
+const units=G.entities.filter(e=>msg.ids&&msg.ids.includes(e.id)&&e.team===senderTeam&&e.isUnit&&e.hp>0);
 units.forEach(u=>{if(!u.dmg)return;u.state='attackmove';u.attackMoveDest={x:msg.wx,y:msg.wy};u.path=fp(u.x,u.y,msg.wx,msg.wy);});
 } else if(msg.t==='rally'){
-const bldg=G.entities.find(e=>e.id===msg.bldgId&&e.team===TE&&e.isBuilding);
+const bldg=G.entities.find(e=>e.id===msg.bldgId&&e.team===senderTeam&&e.isBuilding);
 if(bldg)bldg.rally={x:msg.x,y:msg.y};
 } else if(msg.t==='queue'||msg.t==='qunit'){
-const d=msg.t==='queue'?UD[msg.unit]:UD[msg.unit];
-if(!d||G.credits[TE]<d.cost)return;
-if(d.req2&&!d.req2.every(r=>G.entities.some(e=>e.isBuilding&&e.type===r&&e.team===TE&&e.complete)))return;
+const d=UD[msg.unit];
+if(!d||G.credits[senderTeam]<d.cost)return;
+if(d.req2&&!d.req2.every(r=>G.entities.some(e=>e.isBuilding&&e.type===r&&e.team===senderTeam&&e.complete)))return;
 let bldg;
-if(msg.t==='queue'){bldg=G.entities.find(e=>e.id===msg.bldgId&&e.team===TE&&e.isBuilding);}
-else{const bt=d.cat==='infantry'?'Barracks':'WarFac';bldg=G.entities.find(e=>e.isBuilding&&e.type===bt&&e.team===TE&&e.complete);}
+if(msg.t==='queue'){bldg=G.entities.find(e=>e.id===msg.bldgId&&e.team===senderTeam&&e.isBuilding);}
+else{const bt=d.cat==='infantry'?'Barracks':'WarFac';bldg=G.entities.find(e=>e.isBuilding&&e.type===bt&&e.team===senderTeam&&e.complete);}
 if(!bldg)return;
-G.credits[TE]-=d.cost;
+G.credits[senderTeam]-=d.cost;
 if(!bldg.bq)bldg.bq=[];
 bldg.bq.push({type:msg.unit,prog:0,bt:d.bt});
 } else if(msg.t==='place'){
 const d=BD[msg.btype];
-if(!d||G.credits[TE]<d.cost)return;
-if(d.req&&!G.entities.some(e=>e.isBuilding&&e.type===d.req&&e.team===TE&&e.complete))return;
-if(!canPlace(msg.btype,msg.tx,msg.ty,TE))return;
-G.credits[TE]-=d.cost;
-mkBldg(msg.btype,TE,msg.tx,msg.ty,false);
+if(!d||G.credits[senderTeam]<d.cost)return;
+if(d.req&&!G.entities.some(e=>e.isBuilding&&e.type===d.req&&e.team===senderTeam&&e.complete))return;
+if(!canPlace(msg.btype,msg.tx,msg.ty,senderTeam))return;
+G.credits[senderTeam]-=d.cost;
+mkBldg(msg.btype,senderTeam,msg.tx,msg.ty,false);
 } else if(msg.t==='chat'){
-chatLog('OPP: '+msg.msg,'chat-opp');
+const from=senderTeam;
+chatLog(`P${from}: ${msg.msg}`,'chat-opp');
+// Rebroadcast to all other clients
+const s=JSON.stringify({t:'chat',msg:msg.msg,from});
+for(let i=0;i<MP.conns.length;i++){if(i+1!==senderTeam&&MP.conns[i]?.open)try{MP.conns[i].send(s);}catch(_){}}
 } else if(msg.t==='pong'){
 MP.ping=Date.now()-msg.ts;
-} else if(msg.t==='ready'){
-// Client is ready — start the game
-document.getElementById('readyOverlay').style.display='none';
-startGame();
-setTimeout(()=>{if(MP.conn)MP.conn.send(JSON.stringify({t:'init',map:G.map,e:mpSerEnt(),cr:G.credits,po:G.power,pu2:G.pu,ti:0}));},300);
 } else if(msg.t==='rejoin'){
 // Client reconnected — resend full state
-if(MP.conn)try{MP.conn.send(JSON.stringify({t:'init',map:G.map,e:mpSerEnt(),cr:G.credits,po:G.power,pu2:G.pu,ti:~~G.time}));}catch(_){}
+mpSendTo(senderTeam,{t:'init',map:G.map,e:mpSerEnt(),cr:G.credits,po:G.power,pu2:G.pu,ti:~~G.time,myTeam:senderTeam,allies:G.allies,numPlayers:MP.numPlayers,aiSlots:G.aiSlots.map(s=>({team:s.team,diff:s.diff}))});
 }
 }
 
 function startSolo(diff='medium'){
 MP.mode='solo'; MP.myTeam=TP; MP.aiDiff=diff;
-if(MP.peer){try{MP.peer.destroy();}catch(_){} MP.peer=null; MP.conn=null;}
+MP.numPlayers=2; MP.gameMode='ffa';
+MP.aiSlots=[{team:1,diff,timer:0}];
+if(MP.peer){try{MP.peer.destroy();}catch(_){} MP.peer=null; MP.conn=null; MP.conns=[];}
 startGame();
 showMsg('🤖 AI difficulty: '+diff.toUpperCase());
 }
@@ -3153,7 +3247,8 @@ const msg=(inp.value||'').trim();
 if(!msg)return;
 inp.value='';
 chatLog('YOU: '+msg,'chat-you');
-if(MP.conn&&MP.connected)try{MP.conn.send(JSON.stringify({t:'chat',msg}));}catch(_){}
+if(MP.mode==='host'){mpSendAll({t:'chat',msg,from:0});}
+else if(MP.conn&&MP.connected)try{MP.conn.send(JSON.stringify({t:'chat',msg}));}catch(_){}
 }
 function chatLog(text,cls='chat-sys'){
 const log=document.getElementById('chatLog');
@@ -3205,8 +3300,11 @@ function startGame(){
 document.getElementById('splash').style.display='none';
 initGame(); setupBuildPanel(); resizeCanvas();
 G.camera.zoom=window.innerWidth<600?.7:1;
-G.camera.x=0;G.camera.y=0;
-scrollCamera(); requestAnimationFrame(gameLoop);
+// Camera starts at team 0's spawn (top-left)
+const myStart=SPAWN_CORNERS[MP.myTeam]||SPAWN_CORNERS[0];
+G.camera.x=Math.max(0,myStart.bx*TILE-canvas.width/(2*G.camera.zoom));
+G.camera.y=Math.max(0,myStart.by*TILE-canvas.height/(2*G.camera.zoom));
+if(!G._loopStarted){G._loopStarted=true;scrollCamera();requestAnimationFrame(gameLoop);}
 playSound('ready');
 showMsg('⚔️ Red Alert! Destroy the enemy base!');
 setTimeout(()=>showMsg('💡 Click a building to see what it can produce'),2200);
