@@ -1019,10 +1019,11 @@ function d2p(a,b){return(a.x-b.x)**2+(a.y-b.y)**2;}
 // ─── AI ───────────────────────────────────────────────
 // ─── AI DIFFICULTY CONFIGS ────────────────────────────
 const AI_CFG={
-  easy:   {tMin:5,  tMax:9,  atkMin:8, bkMax:1, wfMax:1, wfMax2:1, riflePct:0.7, tankPct:0.45, maxTurrets:1, maxPower:2, maxWF:1, repairHp:0.35, defRange:5,  creditBonus:0,    atkReroute:0.05},
-  medium: {tMin:3,  tMax:5,  atkMin:5, bkMax:3, wfMax:2, wfMax2:2, riflePct:0.4, tankPct:0.7,  maxTurrets:3, maxPower:4, maxWF:1, repairHp:0.7,  defRange:8,  creditBonus:0,    atkReroute:0.15},
-  hard:   {tMin:1.5,tMax:3,  atkMin:3, bkMax:4, wfMax:3, wfMax2:3, riflePct:0.15,tankPct:0.82, maxTurrets:6, maxPower:6, maxWF:2, repairHp:0.82, defRange:12, creditBonus:500,  atkReroute:0.25},
-  amazing:{tMin:0.6,tMax:1.2,atkMin:2, bkMax:6, wfMax:4, wfMax2:5, riflePct:0.0, tankPct:0.88, maxTurrets:10,maxPower:8, maxWF:2, repairHp:0.92, defRange:18, creditBonus:1200, atkReroute:0.4},
+  //                                                                                                                              minT=early turret goal before WarFac, garrison=units kept at home
+  easy:   {tMin:6,  tMax:10, atkMin:9, bkMax:1, wfMax:1, wfMax2:1, riflePct:0.7, tankPct:0.45, minTurrets:1, maxTurrets:3,  maxPower:2, maxWF:1, repairHp:0.35, defRange:5,  creditBonus:0,    atkReroute:0.05, garrison:0},
+  medium: {tMin:3,  tMax:5,  atkMin:6, bkMax:3, wfMax:2, wfMax2:2, riflePct:0.4, tankPct:0.7,  minTurrets:2, maxTurrets:5,  maxPower:4, maxWF:1, repairHp:0.7,  defRange:8,  creditBonus:0,    atkReroute:0.15, garrison:1},
+  hard:   {tMin:1.5,tMax:3,  atkMin:4, bkMax:4, wfMax:3, wfMax2:3, riflePct:0.1, tankPct:0.82, minTurrets:3, maxTurrets:8,  maxPower:6, maxWF:2, repairHp:0.82, defRange:12, creditBonus:500,  atkReroute:0.3,  garrison:2},
+  amazing:{tMin:0.6,tMax:1.2,atkMin:3, bkMax:6, wfMax:4, wfMax2:5, riflePct:0.0, tankPct:0.88, minTurrets:4, maxTurrets:12, maxPower:8, maxWF:2, repairHp:0.92, defRange:18, creditBonus:1200, atkReroute:0.45, garrison:3},
 };
 
 function runAI(){
@@ -1042,12 +1043,16 @@ const powerCount=bs.filter(b=>b.type==='Power').length;
 const turretCount=bs.filter(b=>b.type==='Turret').length;
 const wfCount=bs.filter(b=>b.type==='WarFac').length;
 const refCount=bs.filter(b=>b.type==='Refinery').length;
+// Core infra first
 if(powerCount<2&&cr>=300)aiBld('Power',cony);
 else if(!has('Refinery')&&cr>=2000)aiBld('Refinery',cony);
 else if(!has('Barracks')&&cr>=500)aiBld('Barracks',cony);
+// Early defense turrets before committing to offense
+else if(turretCount<cfg.minTurrets&&cr>=600)aiBldNear('Turret',cony,bs);
 else if(!has('WarFac')&&cr>=2000)aiBld('WarFac',cony);
 else if(!has('Radar')&&cr>=1000)aiBld('Radar',cony);
-else if(turretCount<cfg.maxTurrets&&cr>=600)aiBld('Turret',cony);
+// Keep building more turrets as economy grows
+else if(turretCount<cfg.maxTurrets&&cr>=600)aiBldNear('Turret',cony,bs);
 else if(powerCount<cfg.maxPower&&cr>=300)aiBld('Power',cony);
 // Hard/Amazing: second WarFac and second Refinery for double production
 else if(wfCount<cfg.maxWF&&cr>=2000)aiBld('WarFac',cony);
@@ -1077,23 +1082,37 @@ const dmgBldg=bs.find(b=>b.hp<b.maxHp*cfg.repairHp);
 if(dmgBldg){rm.repairTarget=dmgBldg;rm.state='repair';rm.path=fp(rm.x,rm.y,dmgBldg.x,dmgBldg.y);}
 });
 
-// Attack: send forces in waves once threshold is met
+// Attack: send forces in waves once threshold is met, keep garrison at home
 const fighters=us.filter(u=>u.dmg>0&&u.type!=='Harvester');
-if(fighters.length>=cfg.atkMin){
-// Amazing/Hard: specifically target the enemy harvester first to cripple economy
+// Sort by proximity to enemy base so vanguard leads
+const enemyBldgs=G.entities.filter(e=>e.team===TP&&e.hp>0&&e.isBuilding);
+const enemyRef=enemyBldgs[0]||{x:MAP_W*TILE/2,y:MAP_H*TILE/2};
+fighters.sort((a,b2)=>d2p(a,enemyRef)-d2p(b2,enemyRef));
+// Keep garrison units near ConYard
+const garrisonCount=Math.min(cfg.garrison,fighters.length);
+const garrisonUnits=fighters.slice(0,garrisonCount);
+const attackers=fighters.slice(garrisonCount);
+if(attackers.length>=cfg.atkMin){
+// Hard/Amazing: target harvester to cripple economy; others: target nearest
 let target;
-if(cfg.atkMin<=3){
+if(cfg.atkMin<=4){
 target=G.entities.find(e=>e.team===TP&&e.hp>0&&e.type==='Harvester')
-||G.entities.filter(e=>e.team===TP&&e.hp>0).sort((a,b2)=>d2p(fighters[0],a)-d2p(fighters[0],b2))[0];
+||G.entities.filter(e=>e.team===TP&&e.hp>0&&e.isBuilding).sort((a,b2)=>d2p(attackers[0],a)-d2p(attackers[0],b2))[0]
+||G.entities.filter(e=>e.team===TP&&e.hp>0).sort((a,b2)=>d2p(attackers[0],a)-d2p(attackers[0],b2))[0];
 } else {
-target=G.entities.filter(e=>e.team===TP&&e.hp>0).sort((a,b2)=>d2p(fighters[0],a)-d2p(fighters[0],b2))[0];
+target=G.entities.filter(e=>e.team===TP&&e.hp>0).sort((a,b2)=>d2p(attackers[0],a)-d2p(attackers[0],b2))[0];
 }
-if(target)fighters.forEach(f=>{
+if(target)attackers.forEach(f=>{
 if(f.state==='idle'||(f.state!=='attack'&&Math.random()<cfg.atkReroute)){
 f.target=target;f.state='attack';f.path=fp(f.x,f.y,target.x,target.y);
 }
 });
 }
+// Garrison: idle units stay near ConYard
+if(cony)garrisonUnits.filter(u=>u.state==='idle').forEach(u=>{
+const gx=cony.x+(Math.random()-.5)*TILE*4,gy=cony.y+(Math.random()-.5)*TILE*4;
+u.path=fp(u.x,u.y,gx,gy);
+});
 
 // Defend: react to nearby enemies
 us.filter(u=>u.state==='idle'&&u.dmg>0).forEach(u=>{
@@ -1108,6 +1127,20 @@ const tx=cony.tx+Math.round(Math.cos(a*Math.PI/4)*r*3);
 const ty=cony.ty+Math.round(Math.sin(a*Math.PI/4)*r*3);
 if(canPlace(type,tx,ty,TE)){G.credits[TE]-=d.cost;mkBldg(type,TE,tx,ty,false);upPow();return;}
 }
+}
+// Place a building (especially turrets) near important friendly buildings
+function aiBldNear(type,cony,bs){
+const d=BD[type];if(G.credits[TE]<d.cost)return;
+// Prefer anchoring to refinery or ConYard — places with economic/strategic value
+const anchors=[...bs.filter(b=>b.type==='Refinery'||b.type==='ConYard'),cony];
+for(const anchor of anchors){
+for(let r=1;r<8;r++)for(let a=0;a<8;a++){
+const tx=anchor.tx+Math.round(Math.cos(a*Math.PI/4)*r*2);
+const ty=anchor.ty+Math.round(Math.sin(a*Math.PI/4)*r*2);
+if(canPlace(type,tx,ty,TE)){G.credits[TE]-=d.cost;mkBldg(type,TE,tx,ty,false);upPow();return;}
+}
+}
+aiBld(type,cony);
 }
 function aiQ(b,type){const d=UD[type];if(G.credits[TE]<d.cost)return;G.credits[TE]-=d.cost;if(!b.bq)b.bq=[];b.bq.push({type,prog:0,bt:d.bt});}
 function checkVic(){
