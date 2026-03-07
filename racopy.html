@@ -957,6 +957,15 @@ for(const o of G.entities){if(o===u||o.isBuilding||o.hp<=0)continue;const dx=u.x
 pushOutOfBldgs(u);
 }
 function updHarv(h,dt){
+if(h.state==='move'){
+movePath(h);
+if(!h.path||!h.path.length){
+const tx=~~(h.x/TILE),ty=~~(h.y/TILE);
+const tile=G.map[ty]?.[tx];
+h.state=(tile&&tile.type===T_ORE&&tile.ore>0)?'harvest':'findOre';
+}
+return;
+}
 if(h.state==='findOre'){const o=findOre(h.x,h.y);if(o){h.path=fp(h.x,h.y,o.x*TILE+TILE/2,o.y*TILE+TILE/2);h.state='moveToOre';}}
 else if(h.state==='moveToOre'){movePath(h);if(!h.path||!h.path.length)h.state='harvest';}
 else if(h.state==='harvest'){
@@ -2658,6 +2667,7 @@ else{sel.repairTarget=null;const jx=(i%4-2)*TILE*.8,jy=(~~(i/4)-1)*TILE*.8;sel.t
 return;
 }
 if(enemy&&sel.dmg>0){sel.target=enemy;sel.state='attack';sel.path=fp(sel.x,sel.y,enemy.x,enemy.y);}
+else if(sel.type==='Harvester'){sel.target=null;sel.state='move';sel.path=fp(sel.x,sel.y,wx,wy);}
 else{const jx=(i%4-2)*TILE*.8,jy=(~~(i/4)-1)*TILE*.8;sel.target=null;sel.state='move';sel.path=fp(sel.x,sel.y,wx+jx,wy+jy);}
 });
 if(isMove){
@@ -3301,6 +3311,7 @@ const fb=msg.repairId?G.entities.find(e=>e.id===msg.repairId&&e.team===senderTea
 units.forEach((sel,i)=>{
 if(sel.type==='Repairman'&&fb){sel.repairTarget=fb;sel.state='repair';sel.path=fp(sel.x,sel.y,fb.x,fb.y);}
 else if(enemy&&sel.dmg>0){sel.target=enemy;sel.state='attack';sel.path=fp(sel.x,sel.y,enemy.x,enemy.y);}
+else if(sel.type==='Harvester'){sel.target=null;sel.state='move';sel.path=fp(sel.x,sel.y,msg.wx,msg.wy);}
 else{const jx=(i%4-2)*TILE*.8,jy=(~~(i/4)-1)*TILE*.8;sel.target=null;sel.state='move';sel.path=fp(sel.x,sel.y,msg.wx+jx,msg.wy+jy);}
 });
 } else if(msg.t==='attackmove'){
