@@ -71,7 +71,13 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 @keyframes pulse{0%,100%{text-shadow:0 0 30px #ff000088,0 0 60px #ff000044;}50%{text-shadow:0 0 50px #ff0000bb,0 0 100px #ff000066;}}
 .start-btn{margin-top:10px;padding:14px 36px;font-family:'Orbitron',sans-serif;font-size:clamp(12px,3.5vw,16px);font-weight:700;letter-spacing:3px;background:transparent;border:2px solid var(--red);color:#ff4444;cursor:pointer;}
 .start-btn:active{background:#cc000022;color:#fff;}
-.instructions{font-size:clamp(11px,2.5vw,13px);color:#554444;text-align:center;line-height:1.9;max-width:440px;}
+.instructions{font-size:clamp(11px,2.5vw,13px);color:#554444;text-align:left;line-height:1.8;max-width:560px;width:100%;}
+.instr-cols{display:flex;gap:20px;flex-wrap:wrap;width:100%;max-width:560px;}
+.instr-col{flex:1;min-width:220px;background:rgba(80,0,0,0.10);border:1px solid #2a0000;border-radius:6px;padding:10px 14px;}
+.instr-col h3{font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:2px;color:#883333;margin:0 0 8px 0;text-transform:uppercase;}
+.instr-row{display:flex;align-items:baseline;gap:6px;margin-bottom:4px;font-size:clamp(10px,2.2vw,12px);}
+.instr-key{color:#cc4444;white-space:nowrap;min-width:14px;}
+.instr-desc{color:#664444;}
 /* OVERLAY */
 #overlay{position:fixed;inset:0;background:rgba(0,0,0,0.88);display:none;align-items:center;justify-content:center;z-index:500;flex-direction:column;gap:20px;}
 #overlay h2{font-family:'Orbitron',sans-serif;font-size:clamp(32px,10vw,56px);font-weight:900;}
@@ -131,15 +137,33 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 <div id="splashInner">
 <h1>RED ALERT 2</h1>
 <h2>BROWSER EDITION</h2>
-<div class="instructions">
-👆 <b>Tap unit</b> to select · tap again to deselect<br>
-📦 <b>Tap empty ground</b> with units selected → <b>move</b><br>
-⚔️ <b>Tap enemy</b> with units selected → <b>attack</b><br>
-⬜ <b>BOX button</b> → drag anywhere to box-select<br>
-👆👆 <b>Double-tap empty</b> to deselect all<br>
-🔀 <b>Drag empty ground</b> to pan · <b>Pinch</b> to zoom<br>
-🖱️ <b>Click</b> select · <b>Right-click</b> order · <b>⚙️</b> full build menu<br>
-⌨️ <b>Esc</b> deselects all
+<div class="instr-cols">
+<div class="instr-col">
+<h3>📱 Mobile</h3>
+<div class="instr-row"><span class="instr-key">👆</span><span class="instr-desc"><b>Tap unit</b> to select · tap again to deselect</span></div>
+<div class="instr-row"><span class="instr-key">👆</span><span class="instr-desc"><b>Tap ground</b> (unit selected) → move there</span></div>
+<div class="instr-row"><span class="instr-key">👆</span><span class="instr-desc"><b>Tap enemy</b> (unit selected) → attack</span></div>
+<div class="instr-row"><span class="instr-key">👆</span><span class="instr-desc"><b>Tap building</b> → see queue &amp; build options</span></div>
+<div class="instr-row"><span class="instr-key">⬜</span><span class="instr-desc"><b>BOX button</b> → drag to box-select multiple</span></div>
+<div class="instr-row"><span class="instr-key">👆👆</span><span class="instr-desc"><b>Double-tap empty</b> → deselect all</span></div>
+<div class="instr-row"><span class="instr-key">✋</span><span class="instr-desc"><b>Long-press</b> → deselect all / cancel</span></div>
+<div class="instr-row"><span class="instr-key">🔀</span><span class="instr-desc"><b>Drag empty ground</b> to pan the map</span></div>
+<div class="instr-row"><span class="instr-key">🤏</span><span class="instr-desc"><b>Pinch</b> to zoom in / out</span></div>
+<div class="instr-row"><span class="instr-key">⚔🏃</span><span class="instr-desc"><b>A-Move button</b> → attack-move to location</span></div>
+</div>
+<div class="instr-col">
+<h3>🖥️ Desktop</h3>
+<div class="instr-row"><span class="instr-key">🖱️L</span><span class="instr-desc"><b>Left-click</b> unit or building to select</span></div>
+<div class="instr-row"><span class="instr-key">🖱️R</span><span class="instr-desc"><b>Right-click</b> ground → move · enemy → attack</span></div>
+<div class="instr-row"><span class="instr-key">🖱️R</span><span class="instr-desc"><b>Right-click RepairBay</b> with units → repair</span></div>
+<div class="instr-row"><span class="instr-key">⬜</span><span class="instr-desc"><b>Drag</b> empty ground to box-select multiple</span></div>
+<div class="instr-row"><span class="instr-key">⇧</span><span class="instr-desc"><b>Shift/Ctrl+click</b> to add to selection</span></div>
+<div class="instr-row"><span class="instr-key">🖱️</span><span class="instr-desc"><b>Move mouse to edge</b> to scroll map</span></div>
+<div class="instr-row"><span class="instr-key">🖱️⬤</span><span class="instr-desc"><b>Scroll wheel</b> or zoom buttons to zoom</span></div>
+<div class="instr-row"><span class="instr-key">⚙️</span><span class="instr-desc"><b>Gear button</b> → full build menu</span></div>
+<div class="instr-row"><span class="instr-key">Esc</span><span class="instr-desc"><b>Escape</b> → deselect all / cancel</span></div>
+<div class="instr-row"><span class="instr-key">⚔🏃</span><span class="instr-desc"><b>A-Move button</b> → attack-move to location</span></div>
+</div>
 </div>
 <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
 <span style="color:#554444;font-size:11px;">MAP SEED:</span>
