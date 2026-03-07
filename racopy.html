@@ -132,11 +132,11 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 <h1>RED ALERT 2</h1>
 <h2>BROWSER EDITION</h2>
 <div class="instructions">
-👆 <b>Tap unit</b> to select · <b>Tap same unit again</b> to deselect<br>
-🏠 <b>Click a building</b> to see &amp; queue what it can produce<br>
-👆👆 <b>Double-tap</b> ground or enemy to move/attack<br>
-☝️ <b>Long-press</b> enemy to attack<br>
-🔲 <b>Drag from a unit</b> to box-select multiple<br>
+👆 <b>Tap unit</b> to select · tap again to deselect<br>
+📦 <b>Tap empty ground</b> with units selected → <b>move</b><br>
+⚔️ <b>Tap enemy</b> with units selected → <b>attack</b><br>
+⬜ <b>BOX button</b> → drag anywhere to box-select<br>
+👆👆 <b>Double-tap empty</b> to deselect all<br>
 🔀 <b>Drag empty ground</b> to pan · <b>Pinch</b> to zoom<br>
 🖱️ <b>Click</b> select · <b>Right-click</b> order · <b>⚙️</b> full build menu<br>
 ⌨️ <b>Esc</b> deselects all
@@ -196,9 +196,9 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 
 <div id="buildToggle" onclick="toggleBuild()">⚙️</div>
 <div id="touchControls">
-<div class="tc-btn" id="btnAttack" onclick="setTM('attack')">⚔️</div>
-<div class="tc-btn" id="btnMove" onclick="setTM('move')">🏃</div>
-<div class="tc-btn" id="btnAMove" onclick="setTM('attackmove')">⚔🏃</div>
+<div class="tc-btn" id="btnBox" onclick="setTM('box')" title="Box select">⬜</div>
+<div class="tc-btn" id="btnAttack" onclick="setTM('attack')" title="Attack mode">⚔️</div>
+<div class="tc-btn" id="btnAMove" onclick="setTM('attackmove')" title="Attack-move">⚔🏃</div>
 </div>
 <div id="modeInd"></div>
 <div id="messages"></div>
@@ -2698,7 +2698,7 @@ function findAt(wx,wy,team){
 for(const e of [...G.entities].reverse()){
 if(e.hp<=0||e.isBuilding)continue;
 if(team!==undefined&&e.team!==team)continue;
-if(dist({x:wx,y:wy},e)<=22)return e;
+if(dist({x:wx,y:wy},e)<=36)return e;
 }
 // Then buildings
 for(const e of [...G.entities].reverse()){
@@ -2810,21 +2810,21 @@ G.placingBuilding=null; touchMode='select'; hideMI(); return;
 }
 
 if(touchMode==='radarSpy'){placeRadarReveal(wx,wy);return;}
-if(touchMode==='move'){if(G.selected.length>0)issueOrder(wx,wy);return;}
+if(touchMode==='move'){if(G.selected.length>0){issueOrder(wx,wy);hideMI();}return;}
 if(touchMode==='attack'){
 const en=findAt(wx,wy,myEnemy());
 if(en&&G.selected.length>0){
 if(MP.mode==='client'){issueOrder(wx,wy);}
 else{G.selected.forEach(sel=>{if(!sel.isUnit||!sel.dmg)return;sel.target=en;sel.state='attack';sel.path=fp(sel.x,sel.y,en.x,en.y);});}
-showMsg('⚔️ Attacking!');
+showMsg('⚔️ Attacking!');hideMI();
 }
 return;
 }
 
-// Normal select mode: tap friendly → select/toggle; tap enemy with selection → attack; tap empty → deselect
+// Normal select mode
 const friendly=findAt(wx,wy,MP.myTeam);
 if(friendly){
-// If a repairman is selected and target is a friendly building, issue repair order
+// Repairman → repair building
 if(friendly.isBuilding&&G.selected.some(s=>s.isUnit&&s.type==='Repairman')){
 if(MP.mode==='client'){
 const ids=G.selected.filter(s=>s.isUnit&&s.type==='Repairman').map(s=>s.id);
@@ -2836,32 +2836,30 @@ G.selected.filter(s=>s.isUnit&&s.type==='Repairman').forEach(rm=>{rm.repairTarge
 }
 return;
 }
+// Tap already-selected unit → deselect all
+if(G.selected.includes(friendly)&&!additive){G.selected=[];return;}
 selectEntity(friendly, additive);
 return;
 }
-// Tap enemy while units selected → attack order
+// Tap enemy with fighters selected → attack
 const enemy=findAt(wx,wy,myEnemy());
-if(enemy&&G.selected.some(s=>s.isUnit&&s.dmg>0)){
-issueOrder(wx,wy);
-return;
-}
-// Tap empty ground: if additive do nothing, else deselect
+if(enemy&&G.selected.some(s=>s.isUnit&&s.dmg>0)){issueOrder(wx,wy);return;}
+// Tap empty ground: if units selected → MOVE; else do nothing (avoids accidental deselect)
+if(G.selected.some(s=>s.isUnit)){issueOrder(wx,wy);return;}
 if(!additive) G.selected=[];
 }
 
-// Double-tap → move/attack order
+// Double-tap empty ground → deselect all
 function doubleTap(clientX,clientY){
 const{x:wx,y:wy}=getWXY(clientX,clientY);
-if(G.selected.length>0) issueOrder(wx,wy);
+const hit=findAt(wx,wy,MP.myTeam)||findAt(wx,wy,myEnemy());
+if(!hit){G.selected=[];showMsg('❌ Deselected');}
+else if(G.selected.length>0) issueOrder(wx,wy); // double-tap unit/enemy = order too
 }
 
-// Long-press → attack order (touch)
+// Long-press → deselect all (quick escape from any state)
 function longPress(clientX,clientY){
-const{x:wx,y:wy}=getWXY(clientX,clientY);
-const en=findAt(wx,wy,myEnemy());
-if(en&&G.selected.some(s=>s.isUnit&&s.dmg>0)){
-issueOrder(wx,wy); showMsg('⚔️ Attack!');
-}
+G.selected=[];G.placingBuilding=null;hideMI();showMsg('❌ Deselected');
 }
 
 // ─── TOUCH EVENTS ─────────────────────────────────────
@@ -2877,11 +2875,12 @@ if(t.length===1){
 const tc=t[0];
 const{x:wx,y:wy}=getWXY(tc.clientX,tc.clientY);
 previewTX=~~(wx/TILE);previewTY=~~(wy/TILE);
-// Check if finger is ON a unit — if so, don't pan
+// Box mode: any drag → box select. Otherwise only drag-from-unit → box select.
 const onUnit=findAt(wx,wy,MP.myTeam);
-pStart={x:tc.clientX,y:tc.clientY,cx:G.camera.x,cy:G.camera.y,wx,wy,onUnit:!!onUnit};
+const doBox=touchMode==='box'||!!onUnit;
+pStart={x:tc.clientX,y:tc.clientY,cx:G.camera.x,cy:G.camera.y,wx,wy,onUnit:doBox};
 isDragging=false; touchSelBox=null;
-lpTimer=setTimeout(()=>{lpTimer=null;longPress(tc.clientX,tc.clientY);},480);
+lpTimer=setTimeout(()=>{lpTimer=null;longPress(tc.clientX,tc.clientY);},350);
 // Double-tap detection
 const now=Date.now();
 if(now-lastTap<280&&Math.abs(tc.clientX-tapX)<40&&Math.abs(tc.clientY-tapY)<40){
@@ -2943,6 +2942,7 @@ const boxUnits=findAllInRect(touchSelBox.x1,touchSelBox.y1,touchSelBox.x2,touchS
 if(boxUnits.length>0) G.selected=boxUnits;
 else G.selected=[];
 touchSelBox=null; selBox=null;
+if(touchMode==='box')hideMI(); // auto-deactivate box mode after use
 } else if(!isDragging&&e.changedTouches.length===1){
 tapAction(e.changedTouches[0].clientX,e.changedTouches[0].clientY,false);
 }
@@ -3087,14 +3087,15 @@ else{MC.style.display='none';t.textContent='▶';}
 }
 function setTM(mode){
 touchMode=mode;
-document.getElementById('btnMove').classList.toggle('active',mode==='move');
+document.getElementById('btnBox').classList.toggle('active',mode==='box');
 document.getElementById('btnAttack').classList.toggle('active',mode==='attack');
 document.getElementById('btnAMove').classList.toggle('active',mode==='attackmove');
-showMI(mode==='move'?'🏃 Move Mode — tap destination':mode==='attackmove'?'⚔🏃 Attack-Move — click destination':'⚔️ Attack Mode — tap enemy');
+const labels={box:'⬜ Box Select — drag to select area',attackmove:'⚔🏃 Attack-Move — tap destination','attack':'⚔️ Attack Mode — tap enemy'};
+if(labels[mode])showMI(labels[mode]);
 }
 let miT;
 function showMI(t){const el=document.getElementById('modeInd');el.textContent=t;el.classList.add('vis');clearTimeout(miT);miT=setTimeout(()=>el.classList.remove('vis'),2500);}
-function hideMI(){clearTimeout(miT);document.getElementById('modeInd').classList.remove('vis');document.getElementById('btnMove').classList.remove('active');document.getElementById('btnAttack').classList.remove('active');document.getElementById('btnAMove').classList.remove('active');touchMode='select';}
+function hideMI(){clearTimeout(miT);document.getElementById('modeInd').classList.remove('vis');document.getElementById('btnBox').classList.remove('active');document.getElementById('btnAttack').classList.remove('active');document.getElementById('btnAMove').classList.remove('active');touchMode='select';}
 function showMsg(text){const d=document.createElement('div');d.className='message';d.textContent=text;document.getElementById('messages').appendChild(d);setTimeout(()=>d.remove(),3000);}
 
 // ─── RADAR SPY ────────────────────────────────────────
