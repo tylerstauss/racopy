@@ -1009,6 +1009,9 @@ if(dl<u.spd*2||dl<4){u.path.shift();u._stk=0;return;}
 const px=u.x,py=u.y;
 if(dl>=u.spd)u.angle=Math.atan2(dy,dx);
 u.x+=dx/dl*u.spd;u.y+=dy/dl*u.spd;
+// Prevent stepping onto water tiles — revert move and abandon path
+const _ntx=~~(u.x/TILE),_nty=~~(u.y/TILE);
+if(_ntx>=0&&_ntx<MAP_W&&_nty>=0&&_nty<MAP_H){const _tt=G.map[_nty][_ntx].type;if(_tt===T_DEEP||_tt===T_SHALLOW){u.x=px;u.y=py;u.path=[];u._stk=0;return;}}
 pushOutOfBldgs(u);
 // Stuck detection: if pushOutOfBldgs is fighting movePath and the unit
 // barely moved, count frames. After ~1.5s clear the path so the state
