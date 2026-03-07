@@ -698,6 +698,7 @@ Barracks:{name:'Barracks', icon:'🏠',cost:500, w:2,h:2,hp:400,power:0, pu:10, 
 WarFac: {name:'War Fac.', icon:'🏗️',cost:2000, w:3,h:2,hp:600,power:0, pu:20, req:'Barracks',range:0,dmg:0,fr:0},
 Turret: {name:'Turret', icon:'🗼',cost:600, w:1,h:1,hp:700,power:0, pu:15, req:'Power', range:9,dmg:50,fr:2.0},
 Radar: {name:'Radar', icon:'📡',cost:1000, w:2,h:2,hp:300,power:0, pu:20, req:'Power', range:0,dmg:0,fr:0},
+RepairBay:{name:'Repair Bay',icon:'🔧',cost:1200, w:3,h:2,hp:500,power:0, pu:20, req:'WarFac',range:0,dmg:0,fr:0},
 };
 // Build times computed from cost
 Object.values(BD).forEach(d=>d.bt=calcBuildTime(d.cost));
@@ -935,8 +936,28 @@ G.entities.splice(i,1); upPow();
 if(G.tick%90===0)checkVic();
 }
 
+const REPAIR_RATE=25; // HP per second healed at RepairBay
 function updUnit(u,dt){
 u.at-=dt;
+
+// RepairBay: move to bay, heal over time, deduct credits proportionally
+if(u.state==='repairBay'){
+const rb=u.repairBayRef;
+if(!rb||rb.hp<=0||rb.team!==u.team){u.state='idle';u.repairBayRef=null;return;}
+if(u.hp>=u.maxHp){u.hp=u.maxHp;u.state='idle';u.repairBayRef=null;if(u.team===MP.myTeam)showMsg('🔧 Repair complete!');return;}
+const pt=nearBldgPt(rb);
+if(dist(u,{x:pt.x,y:pt.y})>TILE*1.5){if(!u.path||!u.path.length)u.path=fp(u.x,u.y,pt.x,pt.y);movePath(u);return;}
+// At bay: repair
+const unitCost=UD[u.type]?UD[u.type].cost:500;
+const costPerHp=(unitCost*0.5)/u.maxHp;
+const healAmt=Math.min(REPAIR_RATE*dt,u.maxHp-u.hp);
+const creditCost=healAmt*costPerHp;
+if(G.credits[u.team]<creditCost)return; // pause — not enough credits
+G.credits[u.team]-=creditCost;
+u.hp=Math.min(u.maxHp,u.hp+healAmt);
+if(u.hp>=u.maxHp){u.hp=u.maxHp;u.state='idle';u.repairBayRef=null;if(u.team===MP.myTeam)showMsg('🔧 Repair complete!');}
+return;
+}
 
 // Attack-move logic
 if(u.state==='attackmove'&&u.attackMoveDest){
@@ -1910,6 +1931,33 @@ ctx.fillRect(x+1,y+h+3,Math.max(0,(w-2)*pct),4);
 ctx.strokeStyle='#666'; ctx.lineWidth=1; ctx.strokeRect(x,y+h+2,w,6);
 }
 
+function drawBuilding_RepairBay(x,y,w,h,tp){
+const p=TPAL[tp];
+dropShadow(x,y,w,h,5,0.4);
+// Concrete base
+panel(x,y,w,h,'#505050','#383838');
+ctx.fillStyle=p.base; ctx.globalAlpha=0.15; ctx.fillRect(x,y,w,h); ctx.globalAlpha=1;
+// Roof with team stripe
+panel(x,y,w,h*0.2,'#484848','#323232');
+ctx.fillStyle=p.stripe; ctx.globalAlpha=0.5; ctx.fillRect(x,y,w,h*0.2); ctx.globalAlpha=1;
+// Wide repair bay door
+const dw=w*0.65, dx=x+(w-dw)/2, dy=y+h*0.3;
+ctx.fillStyle='#0d0d0d'; ctx.fillRect(dx,dy,dw,h-dy+y);
+// Door slats
+for(let s=0;s<5;s++){ctx.fillStyle=s%2?'#1a1a1a':'#151515';ctx.fillRect(dx+1,dy+1+s*(h-dy+y-2)/5,dw-2,(h-dy+y-2)/5);}
+ctx.strokeStyle='#333'; ctx.lineWidth=1; ctx.strokeRect(dx,dy,dw,h-dy+y);
+// Green cross sign above door
+const cx2=x+w/2,cy2=y+h*0.52;
+const arm=Math.min(w,h)*0.12;
+ctx.fillStyle='#00cc44';
+ctx.fillRect(cx2-arm*0.35,cy2-arm,arm*0.7,arm*2);
+ctx.fillRect(cx2-arm,cy2-arm*0.35,arm*2,arm*0.7);
+// Side windows
+pane(x+3,y+h*0.25,7,8); pane(x+w-10,y+h*0.25,7,8);
+// Sparks animation when repairing
+const repairingNearby=G.entities.some(e=>e.isUnit&&e.state==='repairBay'&&e.repairBayRef&&e.repairBayRef.id===undefined);
+if((G.tick%8)<4){ctx.fillStyle='rgba(255,200,0,0.7)';ctx.beginPath();ctx.arc(cx2+(Math.random()-.5)*10,cy2+(Math.random()-.5)*10,1.5,0,Math.PI*2);ctx.fill();}
+}
 // ── MAIN BUILDING DISPATCHER ──────────────────────────────
 function drawBldg(b){
 const d=BD[b.type];
@@ -1925,6 +1973,7 @@ case 'Barracks': drawBuilding_Barracks(x,y,w,h,b.team); break;
 case 'WarFac': drawBuilding_WarFac(x,y,w,h,b.team); break;
 case 'Turret': drawBuilding_Turret(x,y,w,h,b.team); break;
 case 'Radar': drawBuilding_Radar(x,y,w,h,b.team); break;
+case 'RepairBay': drawBuilding_RepairBay(x,y,w,h,b.team); break;
 default:
 dropShadow(x,y,w,h,3); panel(x,y,w,h,TPAL[b.team].mid,TPAL[b.team].dark);
 }
@@ -2509,7 +2558,7 @@ bar.appendChild(wrap); return;
 }
 const msg=document.createElement('span');
 msg.style.cssText='color:#554444;font-size:11px;padding:0 14px;align-self:center;white-space:nowrap;';
-const labels={Refinery:'⛏️ Processing ore',Power:'⚡ Generating power',Turret:'🗼 Auto-defending'};
+const labels={Refinery:'⛏️ Processing ore',Power:'⚡ Generating power',Turret:'🗼 Auto-defending',RepairBay:'🔧 Right-click units → send to repair'};
 msg.textContent=labels[bldg.type]||'No production';
 bar.appendChild(msg); return;
 }
@@ -2710,7 +2759,8 @@ if(fb){sel.repairTarget=fb;sel.state='repair';sel.path=fp(sel.x,sel.y,fb.x,fb.y)
 else{sel.repairTarget=null;const jx=(i%4-2)*TILE*.8,jy=(~~(i/4)-1)*TILE*.8;sel.target=null;sel.state='move';sel.path=fp(sel.x,sel.y,wx+jx,wy+jy);}
 return;
 }
-if(enemy&&sel.dmg>0){sel.target=enemy;sel.state='attack';sel.path=fp(sel.x,sel.y,enemy.x,enemy.y);}
+if(fb&&fb.type==='RepairBay'&&fb.team===MP.myTeam&&sel.hp<sel.maxHp){sel.state='repairBay';sel.repairBayRef=fb;const pt=nearBldgPt(fb);sel.path=fp(sel.x,sel.y,pt.x,pt.y);isMove=false;}
+else if(enemy&&sel.dmg>0){sel.target=enemy;sel.state='attack';sel.path=fp(sel.x,sel.y,enemy.x,enemy.y);}
 else if(sel.type==='Harvester'){sel.target=null;sel.state='move';sel.path=fp(sel.x,sel.y,wx,wy);}
 else{const jx=(i%4-2)*TILE*.8,jy=(~~(i/4)-1)*TILE*.8;sel.target=null;sel.state='move';sel.path=fp(sel.x,sel.y,wx+jx,wy+jy);}
 });
@@ -3354,6 +3404,7 @@ const enemy=findAt(msg.wx,msg.wy,myEnemyOf(senderTeam));
 const fb=msg.repairId?G.entities.find(e=>e.id===msg.repairId&&e.team===senderTeam&&e.isBuilding):findFriendlyBldgAt(msg.wx,msg.wy,senderTeam);
 units.forEach((sel,i)=>{
 if(sel.type==='Repairman'&&fb){sel.repairTarget=fb;sel.state='repair';sel.path=fp(sel.x,sel.y,fb.x,fb.y);}
+else if(fb&&fb.type==='RepairBay'&&fb.team===senderTeam&&sel.hp<sel.maxHp){sel.state='repairBay';sel.repairBayRef=fb;const pt=nearBldgPt(fb);sel.path=fp(sel.x,sel.y,pt.x,pt.y);}
 else if(enemy&&sel.dmg>0){sel.target=enemy;sel.state='attack';sel.path=fp(sel.x,sel.y,enemy.x,enemy.y);}
 else if(sel.type==='Harvester'){sel.target=null;sel.state='move';sel.path=fp(sel.x,sel.y,msg.wx,msg.wy);}
 else{const jx=(i%4-2)*TILE*.8,jy=(~~(i/4)-1)*TILE*.8;sel.target=null;sel.state='move';sel.path=fp(sel.x,sel.y,msg.wx+jx,msg.wy+jy);}
