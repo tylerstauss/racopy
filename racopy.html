@@ -64,7 +64,8 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 @keyframes msgFade{0%{opacity:0;transform:translateY(-8px);}15%{opacity:1;transform:translateY(0);}70%{opacity:1;}100%{opacity:0;}}
 #scanlines{position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px);pointer-events:none;z-index:60;}
 /* SPLASH */
-#splash{position:fixed;inset:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1000;gap:14px;padding:20px;}
+#splash{position:fixed;inset:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;z-index:1000;gap:0;padding:0;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+#splashInner{display:flex;flex-direction:column;align-items:center;gap:14px;padding:20px;min-height:100%;justify-content:center;box-sizing:border-box;width:100%;}
 #splash h1{font-family:'Orbitron',sans-serif;font-size:clamp(28px,8vw,52px);font-weight:900;color:var(--rb);text-shadow:0 0 30px #ff000088,0 0 60px #ff000044;letter-spacing:4px;animation:pulse 2s ease-in-out infinite;}
 #splash h2{font-family:'Orbitron',sans-serif;font-size:clamp(11px,3vw,18px);color:#cc4444;letter-spacing:6px;}
 @keyframes pulse{0%,100%{text-shadow:0 0 30px #ff000088,0 0 60px #ff000044;}50%{text-shadow:0 0 50px #ff0000bb,0 0 100px #ff000066;}}
@@ -127,6 +128,7 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 </head>
 <body>
 <div id="splash">
+<div id="splashInner">
 <h1>RED ALERT 2</h1>
 <h2>BROWSER EDITION</h2>
 <div class="instructions">
@@ -157,6 +159,7 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 </div>
 </div>
 <div id="mpLobby" style="display:none;text-align:center;padding:14px 8px;min-height:70px;"></div>
+</div><!-- end splashInner -->
 </div>
 
 <div id="gameWrapper">
