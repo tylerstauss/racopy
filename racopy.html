@@ -805,6 +805,7 @@ for(let i=0;i<d.h;i++){pts.push([b.tx+d.w,b.ty+i]);pts.push([b.tx-1,b.ty+i]);}
 for(const[tx,ty]of pts)if(tx>=0&&tx<MAP_W&&ty>=0&&ty<MAP_H&&pass(tx,ty))return{x:tx*TILE+TILE/2,y:ty*TILE+TILE/2};
 return{x:b.x,y:b.y};
 }
+const BUILD_RADIUS=8;// max tile distance from nearest non-turret friendly building
 function canPlace(type,tx,ty,team){
 const d=BD[type];
 for(let dy=0;dy<d.h;dy++)for(let dx=0;dx<d.w;dx++){
@@ -813,6 +814,15 @@ if(x<0||x>=MAP_W||y<0||y>=MAP_H)return false;
 const t=G.map[y][x].type;
 if(t===T_DEEP||t===T_SHALLOW||t===T_ROCK||t===T_ORE)return false;
 for(const e of G.entities){if(!e.isBuilding)continue;const ed=BD[e.type];if(x>=e.tx&&x<e.tx+ed.w&&y>=e.ty&&y<e.ty+ed.h)return false;}
+}
+// ConYard is always placeable (it's the first building)
+if(type==='ConYard')return true;
+// Must be within BUILD_RADIUS tiles of a completed non-turret friendly building
+const anchors=G.entities.filter(e=>e.isBuilding&&e.complete&&e.team===team&&e.type!=='Turret');
+if(anchors.length>0){
+const cx=tx+d.w/2,cy=ty+d.h/2;
+const near=anchors.some(b=>{const bx=b.tx+BD[b.type].w/2,by=b.ty+BD[b.type].h/2;return Math.abs(cx-bx)<=BUILD_RADIUS&&Math.abs(cy-by)<=BUILD_RADIUS;});
+if(!near)return false;
 }
 return true;
 }
