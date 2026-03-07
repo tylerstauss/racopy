@@ -1462,13 +1462,13 @@ ctx.strokeStyle=ok?'#00aaff':'#f00'; ctx.lineWidth=2;
 ctx.stroke();
 }
 
-// Selection box
+// Selection box — project world-space corners to iso screen space
 if(selBox){
-const bx=Math.min(selBox.x1,selBox.x2),by=Math.min(selBox.y1,selBox.y2);
-const bw=Math.abs(selBox.x2-selBox.x1),bh=Math.abs(selBox.y2-selBox.y1);
-ctx.strokeStyle='#00ff41'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
-ctx.strokeRect(bx,by,bw,bh);
-ctx.fillStyle='rgba(0,255,65,0.04)'; ctx.fillRect(bx,by,bw,bh);
+const c1=isoProject(selBox.x1,selBox.y1),c2=isoProject(selBox.x2,selBox.y1);
+const c3=isoProject(selBox.x2,selBox.y2),c4=isoProject(selBox.x1,selBox.y2);
+ctx.strokeStyle='#00ff41';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
+ctx.beginPath();ctx.moveTo(c1.x,c1.y);ctx.lineTo(c2.x,c2.y);ctx.lineTo(c3.x,c3.y);ctx.lineTo(c4.x,c4.y);ctx.closePath();ctx.stroke();
+ctx.fillStyle='rgba(0,255,65,0.07)';ctx.fill();
 ctx.setLineDash([]);
 }
 
