@@ -2150,102 +2150,267 @@ return;
 
 switch(b.type){
 case 'ConYard':{
-// Grey concrete industrial complex
-drawIsoBox(bsx,bsy,tw,th,bh,'#505048','#2a2a28','#383830');
-// Team colour band at top of walls
-drawFaceRect(fl,fb,fbb,flb,0,0,1,.08,p.stripe);
-drawFaceRect(fb,fr,frb,fbb,0,0,1,.08,p.stripe);
-// SW: two windows
+// Corrugated concrete factory — distinctive by crane arm + yellow light
+drawIsoBox(bsx,bsy,tw,th,bh,'#525248','#2c2c28','#3c3c34');
+drawFaceRect(fl,fb,fbb,flb,0,0,1,.07,p.stripe);
+drawFaceRect(fb,fr,frb,fbb,0,0,1,.07,p.stripe);
+// Corrugated metal roof stripes on top face
+for(let i=0;i<10;i++){drawFaceRect(ft,fr,fb,fl,i/10,0,(i+.5)/10,1,i%2?'rgba(0,0,0,0.18)':'rgba(255,255,255,0.07)');}
+// SW: recessed panels with rivets
+drawFaceRect(fl,fb,fbb,flb,.04,.22,.47,.8,'#363632');
+drawFaceRect(fl,fb,fbb,flb,.53,.22,.96,.8,'#363632');
+for(const [ru,rv] of [[.07,.26],[.07,.76],[.44,.26],[.44,.76],[.56,.26],[.56,.76],[.93,.26],[.93,.76]]){
+const rp2=facePoint(fl,fb,fbb,flb,ru,rv);ctx.fillStyle='#4e4e4a';ctx.beginPath();ctx.arc(rp2.x,rp2.y,1.5,0,Math.PI*2);ctx.fill();}
+// SW: windows row
 for(let i=0;i<2;i++){
-drawFaceRect(fl,fb,fbb,flb,.12+i*.38,.28,.12+i*.38+.22,.58,'#0d1820');
-drawFaceRect(fl,fb,fbb,flb,.13+i*.38,.29,.13+i*.38+.2,.56,p.glass);
-}
-// SE: large factory bay door
-drawFaceRect(fb,fr,frb,fbb,.18,.18,.82,1,'#0d0d0d');
-drawFaceRect(fb,fr,frb,fbb,.17,.17,.19,1,p.steel);
-drawFaceRect(fb,fr,frb,fbb,.81,.17,.83,1,p.steel);
-// Antenna
-const ap=isoProject((b.tx+tw*.5)*TILE,(b.ty+th*.3)*TILE);
-ctx.strokeStyle=p.steel;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(ap.x,ap.y-bh);ctx.lineTo(ap.x,ap.y-bh-28);ctx.stroke();
-ctx.fillStyle='#ff2200';ctx.beginPath();ctx.arc(ap.x,ap.y-bh-28,4,0,Math.PI*2);ctx.fill();
-ctx.fillStyle='rgba(255,50,0,0.3)';ctx.beginPath();ctx.arc(ap.x,ap.y-bh-28,7,0,Math.PI*2);ctx.fill();
+drawFaceRect(fl,fb,fbb,flb,.1+i*.44,.35,.1+i*.44+.28,.6,'#0a1218');
+drawFaceRect(fl,fb,fbb,flb,.11+i*.44,.36,.11+i*.44+.26,.58,p.glass);}
+// SE: large bay door + slats
+drawFaceRect(fb,fr,frb,fbb,.14,.16,.86,1,'#0d0d0d');
+drawFaceRect(fb,fr,frb,fbb,.13,.15,.15,1,p.steel);drawFaceRect(fb,fr,frb,fbb,.85,.15,.87,1,p.steel);
+for(let s=0;s<4;s++){const sv=.17+s*.21;
+drawFaceRect(fb,fr,frb,fbb,.15,sv,.85,sv+.18,'#161616');
+drawFaceRect(fb,fr,frb,fbb,.15,sv,.85,sv+.03,'#2c2c2c');}
+// Green status light strip above door
+drawFaceRect(fb,fr,frb,fbb,.32,.09,.68,.14,'rgba(0,220,80,0.85)');
+// ── CRANE TOWER (back-right corner = most visible above building) ──
+const crP=isoProject((b.tx+tw-0.5)*TILE,(b.ty+0.5)*TILE);
+const crH=56;
+// Tower post (thick, with highlight side)
+ctx.fillStyle='#666660';ctx.fillRect(crP.x-3,crP.y-crH,6,crH);
+ctx.fillStyle='#888880';ctx.fillRect(crP.x-3,crP.y-crH,3,crH);
+ctx.strokeStyle='rgba(0,0,0,0.4)';ctx.lineWidth=1;ctx.strokeRect(crP.x-3,crP.y-crH,6,crH);
+// Cross-brace
+ctx.strokeStyle='#555550';ctx.lineWidth=1;
+ctx.beginPath();ctx.moveTo(crP.x-3,crP.y-crH*.3);ctx.lineTo(crP.x+3,crP.y-crH*.7);ctx.stroke();
+ctx.beginPath();ctx.moveTo(crP.x+3,crP.y-crH*.3);ctx.lineTo(crP.x-3,crP.y-crH*.7);ctx.stroke();
+// Horizontal arm pointing SE (toward viewer)
+const armTX=crP.x+30, armTY=crP.y-crH+15;
+ctx.strokeStyle='#777770';ctx.lineWidth=4;ctx.lineCap='square';
+ctx.beginPath();ctx.moveTo(crP.x,crP.y-crH);ctx.lineTo(armTX,armTY);ctx.stroke();
+ctx.strokeStyle='#999990';ctx.lineWidth=2;
+ctx.beginPath();ctx.moveTo(crP.x,crP.y-crH);ctx.lineTo(armTX,armTY);ctx.stroke();
+// Counterweight (back end of arm)
+ctx.fillStyle='#555550';ctx.fillRect(crP.x-8,crP.y-crH-2,6,8);
+// WARNING LIGHT + GLOW (most recognisable feature)
+ctx.fillStyle='#ffcc00';ctx.beginPath();ctx.arc(armTX,armTY,5.5,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='rgba(255,210,0,0.35)';ctx.beginPath();ctx.arc(armTX,armTY,11,0,Math.PI*2);ctx.fill();
+// Hanging cable
+ctx.strokeStyle='#555';ctx.lineWidth=1;ctx.setLineDash([3,2]);
+ctx.beginPath();ctx.moveTo(armTX,armTY);ctx.lineTo(armTX-3,armTY+22);ctx.stroke();ctx.setLineDash([]);
+ctx.strokeStyle='#666';ctx.lineWidth=2;ctx.beginPath();ctx.arc(armTX-3,armTY+26,3,0,Math.PI);ctx.stroke();
 break;}
 
 case 'Power':{
-// Dark with glowing yellow-green vents
-drawIsoBox(bsx,bsy,tw,th,bh,'#1a2810','#0e1a08','#142010');
-// Glowing vent stripes on SE face
-for(let i=0;i<4;i++){const vv=.15+i*.18;
-drawFaceRect(fb,fr,frb,fbb,0,vv,1,vv+.08,'#886600');
-drawFaceRect(fb,fr,frb,fbb,.05,vv+.01,.95,vv+.06,'#ffee44');
+// Dark bunker — TWIN COOLING TOWERS are the key silhouette
+drawIsoBox(bsx,bsy,tw,th,bh,'#222a20','#141c10','#1a2218');
+drawFaceRect(fl,fb,fbb,flb,0,0,1,.07,p.stripe);
+drawFaceRect(fb,fr,frb,fbb,0,0,1,.07,p.stripe);
+// SE: glowing vent bands (hot exhaust)
+for(let i=0;i<4;i++){const vv=.14+i*.19;
+drawFaceRect(fb,fr,frb,fbb,.02,vv,.98,vv+.09,'#7a5500');
+drawFaceRect(fb,fr,frb,fbb,.04,vv+.015,.96,vv+.065,'#ffe040');}
+// SW: cooling grill slats
+for(let i=0;i<4;i++){drawFaceRect(fl,fb,fbb,flb,.07+i*.21,.1,.07+i*.21+.14,.9,'#1c2c18');}
+// ── TWO COOLING TOWERS ──
+const t1=isoProject((b.tx+0.5)*TILE,(b.ty+0.5)*TILE);
+const t2=isoProject((b.tx+1.5)*TILE,(b.ty+0.5)*TILE);
+const ctH=46,ctW=15;
+for(const [cp2,side] of [[t1,-1],[t2,1]]){
+// Tower body — tapered trapezoid (wider at base, narrower at top)
+ctx.fillStyle='#3a4a5a';
+ctx.beginPath();ctx.moveTo(cp2.x-ctW/2,cp2.y);ctx.lineTo(cp2.x+ctW/2,cp2.y);
+ctx.lineTo(cp2.x+ctW*.35,cp2.y-ctH);ctx.lineTo(cp2.x-ctW*.35,cp2.y-ctH);ctx.closePath();ctx.fill();
+// Highlight stripe (left side lighter)
+ctx.fillStyle='rgba(255,255,255,0.08)';
+ctx.beginPath();ctx.moveTo(cp2.x-ctW/2,cp2.y);ctx.lineTo(cp2.x,cp2.y);
+ctx.lineTo(cp2.x-ctW*.35*.5,cp2.y-ctH);ctx.lineTo(cp2.x-ctW*.35,cp2.y-ctH);ctx.closePath();ctx.fill();
+// Horizontal banding rings (3)
+ctx.strokeStyle='rgba(0,0,0,0.35)';ctx.lineWidth=1.5;
+for(let r=1;r<4;r++){const ry=cp2.y-r*(ctH/4),rw=ctW/2*(1-r*0.04);
+ctx.beginPath();ctx.moveTo(cp2.x-rw,ry);ctx.lineTo(cp2.x+rw,ry);ctx.stroke();}
+// Rim cap ellipse
+ctx.fillStyle='#4a5a6e';ctx.beginPath();ctx.ellipse(cp2.x,cp2.y-ctH,ctW*.35+2,5,0,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='#6a8aaa';ctx.beginPath();ctx.ellipse(cp2.x,cp2.y-ctH,ctW*.35,3.5,0,0,Math.PI*2);ctx.fill();
+// Inner hot opening glow
+ctx.fillStyle='rgba(80,180,255,0.25)';ctx.beginPath();ctx.ellipse(cp2.x,cp2.y-ctH,ctW*.2,2,0,0,Math.PI*2);ctx.fill();
+// Steam wisps
+const st=(G.time*0.9+side)%6;
+ctx.fillStyle='rgba(200,220,240,0.14)';
+for(let s=0;s<3;s++){ctx.beginPath();ctx.ellipse(cp2.x+Math.sin(G.time+s)*2.5,cp2.y-ctH-3-s*5-st,2+s,1.5+s*.4,0,0,Math.PI*2);ctx.fill();}
 }
-// SW cooling pipes
-for(let i=0;i<3;i++){drawFaceRect(fl,fb,fbb,flb,.08+i*.3,.12,.08+i*.3+.14,.88,'#334422');}
-// Top: glowing reactor core
-const pp=isoProject((b.tx+tw/2)*TILE,(b.ty+th/2)*TILE);
-drawFaceRect(ft,fr,fb,fl,.25,.25,.75,.75,'#2a4a10');
-const coreG=ctx.createRadialGradient(pp.x,pp.y-bh*.6,2,pp.x,pp.y-bh*.6,18);
-coreG.addColorStop(0,'rgba(180,255,80,0.95)');coreG.addColorStop(1,'rgba(80,200,0,0)');
-ctx.fillStyle=coreG;ctx.beginPath();ctx.arc(pp.x,pp.y-bh*.6,18,0,Math.PI*2);ctx.fill();
+// Central lightning bolt between towers
+const mp2=isoProject((b.tx+1)*TILE,(b.ty+1)*TILE);
+ctx.fillStyle='#ffe040';
+ctx.beginPath();ctx.moveTo(mp2.x+3,mp2.y-4);ctx.lineTo(mp2.x-2,mp2.y+3);ctx.lineTo(mp2.x+1,mp2.y+3);
+ctx.lineTo(mp2.x-2,mp2.y+10);ctx.lineTo(mp2.x+4,mp2.y+2);ctx.lineTo(mp2.x+1,mp2.y+2);ctx.closePath();ctx.fill();
+ctx.fillStyle='rgba(255,230,50,0.2)';ctx.beginPath();ctx.arc(mp2.x,mp2.y+3,9,0,Math.PI*2);ctx.fill();
 break;}
 
 case 'Refinery':{
-// Earthy tan industrial ore processor
-drawIsoBox(bsx,bsy,tw,th,bh,'#3a3020','#28201a','#302818');
+// Earthy factory — ORE SILO is the unmistakeable signature element
+drawIsoBox(bsx,bsy,tw,th,bh,'#3c3222','#28221a','#32281e');
 drawFaceRect(fl,fb,fbb,flb,0,0,1,.07,p.stripe);
 drawFaceRect(fb,fr,frb,fbb,0,0,1,.07,p.stripe);
-// SE: ore dump opening (lower half)
-drawFaceRect(fb,fr,frb,fbb,.1,.42,.9,1,'#0d0d0d');
-drawFaceRect(fb,fr,frb,fbb,.12,.44,.88,.99,'#1a1000');
-drawFaceRect(fb,fr,frb,fbb,.28,.6,.72,.97,'#a06010'); // ore glow
-// SW: machinery tanks
-drawFaceRect(fl,fb,fbb,flb,.05,.28,.2,.78,'#444030');
-drawFaceRect(fl,fb,fbb,flb,.72,.28,.87,.78,'#444030');
-// Top: processing dome
-const rfp=isoProject((b.tx+tw*.5)*TILE,(b.ty+th*.4)*TILE);
-ctx.fillStyle='#704a28';ctx.beginPath();ctx.arc(rfp.x,rfp.y-bh,12,0,Math.PI*2);ctx.fill();
-ctx.fillStyle='#a08060';ctx.beginPath();ctx.arc(rfp.x,rfp.y-bh,7,0,Math.PI*2);ctx.fill();
-ctx.fillStyle='rgba(200,140,0,0.45)';ctx.beginPath();ctx.arc(rfp.x,rfp.y-bh,11,0,Math.PI*2);ctx.fill();
+// SW: conveyor machinery panels
+drawFaceRect(fl,fb,fbb,flb,.04,.2,.22,.85,'#3a3020');
+drawFaceRect(fl,fb,fbb,flb,.25,.2,.42,.85,'#3a3020');
+for(let i=0;i<3;i++){drawFaceRect(fl,fb,fbb,flb,.06+i*.19,.55,.06+i*.19+.14,.82,'#222015');}
+// SE: large ore intake funnel (dark opening, lower 60%)
+drawFaceRect(fb,fr,frb,fbb,.06,.38,.94,1,'#0d0d0d');
+drawFaceRect(fb,fr,frb,fbb,.07,.39,.93,.99,'#140e00');
+// Ore glow inside
+drawFaceRect(fb,fr,frb,fbb,.2,.55,.8,.96,'#cc8810');
+drawFaceRect(fb,fr,frb,fbb,.3,.62,.7,.93,'rgba(255,180,0,0.35)');
+// Frame around intake
+drawFaceRect(fb,fr,frb,fbb,.05,.37,.07,1,'#aa8830');drawFaceRect(fb,fr,frb,fbb,.93,.37,.95,1,'#aa8830');
+// ── LARGE ORE SILO (back-right, most distinctive feature) ──
+const siloP=isoProject((b.tx+tw-0.6)*TILE,(b.ty+0.6)*TILE);
+const sH=72,sW=20;
+// Silo body with gold gradient
+const siloGrd=ctx.createLinearGradient(siloP.x-sW/2,0,siloP.x+sW/2,0);
+siloGrd.addColorStop(0,'#664818');siloGrd.addColorStop(.35,'#cc9030');siloGrd.addColorStop(.65,'#aa7820');siloGrd.addColorStop(1,'#4a3010');
+ctx.fillStyle=siloGrd;
+ctx.beginPath();ctx.moveTo(siloP.x-sW/2,siloP.y);ctx.lineTo(siloP.x+sW/2,siloP.y);
+ctx.lineTo(siloP.x+sW/2-2,siloP.y-sH);ctx.lineTo(siloP.x-sW/2+2,siloP.y-sH);ctx.closePath();ctx.fill();
+// Ore sheen on right side
+ctx.fillStyle='rgba(255,200,60,0.08)';ctx.fillRect(siloP.x+2,siloP.y-sH,sW/2-4,sH);
+// Horizontal banding rings (5)
+ctx.strokeStyle='rgba(0,0,0,0.45)';ctx.lineWidth=2;
+for(let r=0;r<5;r++){const ry=siloP.y-(r+.5)*(sH/5);
+ctx.beginPath();ctx.moveTo(siloP.x-sW/2+r*.4,ry);ctx.lineTo(siloP.x+sW/2-r*.4,ry);ctx.stroke();}
+// Bright highlight stripe
+ctx.strokeStyle='rgba(255,200,80,0.25)';ctx.lineWidth=1;
+ctx.beginPath();ctx.moveTo(siloP.x-sW/2+3,siloP.y);ctx.lineTo(siloP.x-sW/2+3,siloP.y-sH);ctx.stroke();
+// Silo top cap
+ctx.fillStyle='#886228';ctx.beginPath();ctx.ellipse(siloP.x,siloP.y-sH,sW/2+3,7,0,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='#ddaa40';ctx.beginPath();ctx.ellipse(siloP.x,siloP.y-sH,sW/2,5,0,0,Math.PI*2);ctx.fill();
+// Ore fill glow from top
+ctx.fillStyle='rgba(255,180,0,0.4)';ctx.beginPath();ctx.ellipse(siloP.x,siloP.y-sH,sW/2-2,3.5,0,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='rgba(255,180,0,0.15)';ctx.beginPath();ctx.arc(siloP.x,siloP.y-sH,14,0,Math.PI*2);ctx.fill();
+// Conveyor pipe from silo to intake
+ctx.strokeStyle='#886030';ctx.lineWidth=5;ctx.lineCap='round';
+ctx.beginPath();ctx.moveTo(siloP.x-sW/2,siloP.y-sH*.25);ctx.lineTo(fbb.x+8,fbb.y-8);ctx.stroke();
+ctx.strokeStyle='#aa8040';ctx.lineWidth=3;
+ctx.beginPath();ctx.moveTo(siloP.x-sW/2,siloP.y-sH*.25);ctx.lineTo(fbb.x+8,fbb.y-8);ctx.stroke();
 break;}
 
 case 'Barracks':{
-// Military building with team colours
-drawIsoBox(bsx,bsy,tw,th,bh,p.dark,p.dark,p.mid);
-drawFaceRect(fl,fb,fbb,flb,0,0,1,.09,p.stripe);
-drawFaceRect(fb,fr,frb,fbb,0,0,1,.09,p.stripe);
+// Military barracks — PITCHED ROOF + flag + sandbags = instantly military
+drawIsoBox(bsx,bsy,tw,th,bh,'#706a5a','#484238','#585248');
+drawFaceRect(fl,fb,fbb,flb,0,0,1,.07,p.stripe);
+drawFaceRect(fb,fr,frb,fbb,0,0,1,.07,p.stripe);
+// SW: stone block texture (staggered rows)
+for(let row=0;row<4;row++)for(let col=0;col<3;col++){
+const uo=(row%2)*.165, u=col/3+uo, v=.09+row*.21;
+ctx.strokeStyle='rgba(0,0,0,0.22)';ctx.lineWidth=.8;
+const pa=facePoint(fl,fb,fbb,flb,u,.01+v),pb=facePoint(fl,fb,fbb,flb,Math.min(1,u+.31),.01+v);
+const pc=facePoint(fl,fb,fbb,flb,Math.min(1,u+.31),v+.19),pd=facePoint(fl,fb,fbb,flb,u,v+.19);
+ctx.beginPath();ctx.moveTo(pa.x,pa.y);ctx.lineTo(pb.x,pb.y);ctx.lineTo(pc.x,pc.y);ctx.lineTo(pd.x,pd.y);ctx.closePath();ctx.stroke();}
+// SE: stone texture + reinforced central door
+for(let row=0;row<4;row++)for(let col=0;col<2;col++){
+const uo=(row%2)*.25, u=col/2+uo, v=.09+row*.21;
+ctx.strokeStyle='rgba(0,0,0,0.22)';ctx.lineWidth=.8;
+const pa=facePoint(fb,fr,frb,fbb,u,.01+v),pb=facePoint(fb,fr,frb,fbb,Math.min(1,u+.44),.01+v);
+const pc=facePoint(fb,fr,frb,fbb,Math.min(1,u+.44),v+.19),pd=facePoint(fb,fr,frb,fbb,u,v+.19);
+ctx.beginPath();ctx.moveTo(pa.x,pa.y);ctx.lineTo(pb.x,pb.y);ctx.lineTo(pc.x,pc.y);ctx.lineTo(pd.x,pd.y);ctx.closePath();ctx.stroke();}
+// SE: reinforced door (centre, lower 65%)
+drawFaceRect(fb,fr,frb,fbb,.28,.35,.72,1,'#0c1018');
+drawFaceRect(fb,fr,frb,fbb,.30,.37,.70,.99,'#111820');
+// Door bolts
+for(const [du,dv] of [[.31,.41],[.69,.41],[.31,.7],[.69,.7]]){
+const dp2=facePoint(fb,fr,frb,fbb,du,dv);ctx.fillStyle=p.rivet;ctx.beginPath();ctx.arc(dp2.x,dp2.y,1.8,0,Math.PI*2);ctx.fill();}
+ctx.strokeStyle=p.acc;ctx.lineWidth=1.5;
+const da=facePoint(fb,fr,frb,fbb,.28,.35),db=facePoint(fb,fr,frb,fbb,.72,.35);
+const dc=facePoint(fb,fr,frb,fbb,.72,1),dd=facePoint(fb,fr,frb,fbb,.28,1);
+ctx.beginPath();ctx.moveTo(da.x,da.y);ctx.lineTo(db.x,db.y);ctx.lineTo(dc.x,dc.y);ctx.lineTo(dd.x,dd.y);ctx.closePath();ctx.stroke();
 // SW: barred windows
 for(let i=0;i<2;i++){
-drawFaceRect(fl,fb,fbb,flb,.08+i*.42,.28,.08+i*.42+.28,.62,'#0d0d0d');
-drawFaceRect(fl,fb,fbb,flb,.09+i*.42,.29,.09+i*.42+.26,.6,p.glass);
-}
-// SE: double door
-drawFaceRect(fb,fr,frb,fbb,.16,.33,.46,1,'#0d0d0d');
-drawFaceRect(fb,fr,frb,fbb,.54,.33,.84,1,'#0d0d0d');
-drawFaceRect(fb,fr,frb,fbb,.17,.34,.45,.99,'#181818');
-drawFaceRect(fb,fr,frb,fbb,.55,.34,.83,.99,'#181818');
-// Top: star emblem
-const bp=isoProject((b.tx+tw/2)*TILE,(b.ty+th/2)*TILE);
-ctx.fillStyle=p.acc;ctx.font='bold 18px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('★',bp.x,bp.y-bh*.55);
+drawFaceRect(fl,fb,fbb,flb,.08+i*.44,.28,.08+i*.44+.3,.6,'#080e14');
+drawFaceRect(fl,fb,fbb,flb,.09+i*.44,.29,.09+i*.44+.28,.58,'rgba(30,60,100,0.55)');
+for(let bar=0;bar<3;bar++){const bu=.1+i*.44+bar*.095;
+drawFaceRect(fl,fb,fbb,flb,bu,.29,bu+.025,.58,'rgba(0,0,0,0.75)');}}
+// Sandbags at base of SE face (front)
+for(let i=0;i<4;i++){const sp=facePoint(fb,fr,frb,fbb,.1+i*.22,.88);
+ctx.fillStyle=i%2?'#8a7850':'#6e6240';ctx.beginPath();ctx.ellipse(sp.x,sp.y,6,3.5,0,0,Math.PI*2);ctx.fill();
+ctx.strokeStyle='#3a3018';ctx.lineWidth=.6;ctx.stroke();}
+// ── PITCHED ROOF RIDGE + slopes ──
+const rN=isoProject((b.tx+1)*TILE,b.ty*TILE);   // ridge north end
+const rS=isoProject((b.tx+1)*TILE,(b.ty+2)*TILE); // ridge south end
+const pH=22;  // pitch height in pixels
+// NW roof slope (from west corner to ridge)
+ctx.fillStyle='#5a5446';ctx.globalAlpha=.82;
+ctx.beginPath();ctx.moveTo(fl.x,fl.y);ctx.lineTo(rN.x,rN.y-pH);ctx.lineTo(rS.x,rS.y-pH);ctx.closePath();ctx.fill();
+// NE roof slope (from north corner to ridge)
+ctx.fillStyle='#6a6454';ctx.globalAlpha=.82;
+ctx.beginPath();ctx.moveTo(ft.x,ft.y);ctx.lineTo(rN.x,rN.y-pH);ctx.lineTo(rS.x,rS.y-pH);ctx.closePath();ctx.fill();
+ctx.globalAlpha=1;
+// Ridge beam
+ctx.strokeStyle='#3e3a2e';ctx.lineWidth=3;
+ctx.beginPath();ctx.moveTo(rN.x,rN.y-pH);ctx.lineTo(rS.x,rS.y-pH);ctx.stroke();
+ctx.strokeStyle='#6e6850';ctx.lineWidth=1.5;
+ctx.beginPath();ctx.moveTo(rN.x,rN.y-pH);ctx.lineTo(rS.x,rS.y-pH);ctx.stroke();
+// ── FLAG POLE (back-left corner) ──
+const fpP=isoProject((b.tx+0.3)*TILE,(b.ty+0.3)*TILE);
+const fpH=48;
+ctx.strokeStyle='#aaa890';ctx.lineWidth=2;
+ctx.beginPath();ctx.moveTo(fpP.x,fpP.y);ctx.lineTo(fpP.x,fpP.y-fpH);ctx.stroke();
+// Waving flag (team colour)
+const fw=22,fhh=13,wave=Math.sin(G.time*3)*2;
+ctx.fillStyle=p.stripe;
+ctx.beginPath();ctx.moveTo(fpP.x,fpP.y-fpH);
+ctx.quadraticCurveTo(fpP.x+fw/2,fpP.y-fpH+wave,fpP.x+fw,fpP.y-fpH+3);
+ctx.quadraticCurveTo(fpP.x+fw/2,fpP.y-fpH+fhh+wave,fpP.x,fpP.y-fpH+fhh);
+ctx.closePath();ctx.fill();
+ctx.fillStyle=p.acc;ctx.globalAlpha=.6;
+ctx.beginPath();ctx.moveTo(fpP.x+2,fpP.y-fpH+3);
+ctx.quadraticCurveTo(fpP.x+fw/2,fpP.y-fpH+5+wave,fpP.x+fw-2,fpP.y-fpH+4);
+ctx.lineTo(fpP.x+fw-2,fpP.y-fpH+6);
+ctx.quadraticCurveTo(fpP.x+fw/2,fpP.y-fpH+7+wave,fpP.x+2,fpP.y-fpH+6);
+ctx.closePath();ctx.fill();ctx.globalAlpha=1;
 break;}
 
 case 'WarFac':{
-// Heavy industrial steel factory
-drawIsoBox(bsx,bsy,tw,th,bh,'#2a2828','#181818','#222020');
+// Heavy steel factory — TWIN BAY DOORS + overhead crane traversal
+drawIsoBox(bsx,bsy,tw,th,bh,'#2c2a28','#181614','#222018');
 drawFaceRect(fl,fb,fbb,flb,0,0,1,.07,p.stripe);
 drawFaceRect(fb,fr,frb,fbb,0,0,1,.07,p.stripe);
-// SE: giant garage door
-drawFaceRect(fb,fr,frb,fbb,.05,.14,.95,1,'#0a0a0a');
-drawFaceRect(fb,fr,frb,fbb,.04,.13,.06,1,p.steel);
-drawFaceRect(fb,fr,frb,fbb,.94,.13,.96,1,p.steel);
-for(let s=0;s<5;s++){const sv=.15+s*.17;
-drawFaceRect(fb,fr,frb,fbb,.07,sv,.93,sv+.14,'#141414');
-drawFaceRect(fb,fr,frb,fbb,.07,sv,.93,sv+.025,'#2a2a2a');
-}
-// SW: industrial windows
+// Skylights on top face
+for(let i=0;i<3;i++){drawFaceRect(ft,fr,fb,fl,.18+i*.24,.1,.18+i*.24+.16,.9,'rgba(120,180,255,0.12)');}
+// SE: TWIN garage bay doors (split down middle)
+for(let side=0;side<2;side++){const u0=.03+side*.47,u1=u0+.44;
+drawFaceRect(fb,fr,frb,fbb,u0,.13,u1,1,'#090909');
+drawFaceRect(fb,fr,frb,fbb,u0,.13,u0+.015,1,p.steel);
+drawFaceRect(fb,fr,frb,fbb,u1-.015,.13,u1,1,p.steel);
+for(let s=0;s<6;s++){const sv=.14+s*.145;
+drawFaceRect(fb,fr,frb,fbb,u0+.015,sv,u1-.015,sv+.12,'#121210');
+drawFaceRect(fb,fr,frb,fbb,u0+.015,sv,u1-.015,sv+.022,'#242420');}
+// Door status light
+drawFaceRect(fb,fr,frb,fbb,u0+.14,.08,u0+.3,.12,'rgba(0,200,80,0.6)');}
+// Centre divide
+const cdp=facePoint(fb,fr,frb,fbb,.5,.13),cdp2=facePoint(fb,fr,frb,fbb,.5,1);
+ctx.strokeStyle='#181614';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(cdp.x,cdp.y);ctx.lineTo(cdp2.x,cdp2.y);ctx.stroke();
+// SW: windows row + wall panels
 for(let i=0;i<2;i++){
-drawFaceRect(fl,fb,fbb,flb,.07+i*.46,.18,.07+i*.46+.34,.52,'#0d0d0d');
-drawFaceRect(fl,fb,fbb,flb,.08+i*.46,.19,.08+i*.46+.32,.5,p.glass);
-}
+drawFaceRect(fl,fb,fbb,flb,.06+i*.46,.15,.06+i*.46+.36,.5,'#0a0a08');
+drawFaceRect(fl,fb,fbb,flb,.07+i*.46,.16,.07+i*.46+.34,.48,p.glass);}
+// ── OVERHEAD CRANE (moves across top, extends above roof) ──
+const cpos=((G.time*0.25)%1)*.75+.05; // 0.05..0.8 range
+const railL=isoProject((b.tx+.3)*TILE,(b.ty+.3)*TILE);
+const railR=isoProject((b.tx+tw-.3)*TILE,(b.ty+.3)*TILE);
+// Crane rail (horizontal bar along back of roof)
+ctx.strokeStyle='#555550';ctx.lineWidth=4;
+ctx.beginPath();ctx.moveTo(railL.x,railL.y-8);ctx.lineTo(railR.x,railR.y-8);ctx.stroke();
+ctx.strokeStyle='#777770';ctx.lineWidth=2;
+ctx.beginPath();ctx.moveTo(railL.x,railL.y-8);ctx.lineTo(railR.x,railR.y-8);ctx.stroke();
+// Trolley position (interpolated along rail)
+const trX=railL.x+(railR.x-railL.x)*cpos, trY=railL.y+(railR.y-railL.y)*cpos-8;
+ctx.fillStyle='#777';ctx.fillRect(trX-8,trY-4,16,8);
+ctx.fillStyle='#999';ctx.fillRect(trX-6,trY-3,12,5);
+// Hanging cable + hook
+ctx.strokeStyle='#555';ctx.lineWidth=1;
+ctx.beginPath();ctx.moveTo(trX,trY+4);ctx.lineTo(trX,trY+20);ctx.stroke();
+ctx.strokeStyle='#666';ctx.lineWidth=2;ctx.beginPath();ctx.arc(trX,trY+24,3,0,Math.PI);ctx.stroke();
 break;}
 
 case 'Turret':{
