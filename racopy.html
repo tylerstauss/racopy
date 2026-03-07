@@ -390,6 +390,25 @@ const mctx = MC.getContext('2d');
 
 const TILE = 32, MAP_W = 80, MAP_H = 60;
 const PW = MAP_W * TILE, PH = MAP_H * TILE;
+const ISO_W = 64;
+const ISO_H = 32;
+const ISO_OX = MAP_H * (ISO_W / 2);  // = 960
+const ISO_PW = (MAP_W + MAP_H) * (ISO_W / 2);  // = 4480
+const ISO_PH = (MAP_W + MAP_H) * (ISO_H / 2);  // = 2240
+
+function isoProject(wx, wy) {
+    const tx = wx / TILE, ty = wy / TILE;
+    return { x: (tx - ty) * (ISO_W / 2) + ISO_OX, y: (tx + ty) * (ISO_H / 2) };
+}
+
+function isoUnproject(sx, sy) {
+    const dx = sx - ISO_OX;
+    const A = ISO_W / 2, B = ISO_H / 2;
+    const tx = (dx / A + sy / B) / 2;
+    const ty = (sy / B - dx / A) / 2;
+    return { x: tx * TILE, y: ty * TILE };
+}
+
 const T_DEEP=0, T_SHALLOW=1, T_SAND=2, T_GRASS=3, T_FOREST=4,
 T_DIRT=5, T_MUD=6, T_ROCK=7, T_ORE=8;
 const TP=0, TE=1;
@@ -574,147 +593,113 @@ const TILE_DETAIL = {
 let terrainCache = null;
 let terrainCacheDirty = true;
 
+let isoTerrainCache = null;
+
 function buildTerrainCache(){
 if(!terrainCacheDirty||!G.map)return;
-if(!terrainCache){terrainCache=document.createElement('canvas');terrainCache.width=PW;terrainCache.height=PH;}
-const tc=terrainCache.getContext('2d');
-for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++) drawTile(tc,x,y);
+if(!isoTerrainCache){isoTerrainCache=document.createElement('canvas');isoTerrainCache.width=ISO_PW;isoTerrainCache.height=ISO_PH;}
+const tc=isoTerrainCache.getContext('2d');
+tc.clearRect(0,0,ISO_PW,ISO_PH);
+// Draw tiles in diagonal painter order (top of map first)
+for(let sum=0;sum<MAP_W+MAP_H-1;sum++){
+for(let tx=Math.max(0,sum-MAP_H+1);tx<=Math.min(sum,MAP_W-1);tx++){
+const ty=sum-tx;
+drawIsoTile(tc,tx,ty);
+}
+}
 terrainCacheDirty=false;
 }
 
-function drawTile(tc,x,y){
-const cell=G.map[y][x];
+function drawIsoTile(tc,tx,ty){
+const cell=G.map[ty][tx];
 const pal=TILE_PAL[cell.type];
-const ci=((x*13+y*7+~~(cell.noise*3))%3+3)%3;
-const px=x*TILE, py=y*TILE;
+const ci=((tx*13+ty*7+~~(cell.noise*3))%3+3)%3;
+const{x:sx,y:sy}=isoProject(tx*TILE,ty*TILE);
+const hw=ISO_W/2,hh=ISO_H/2;
 
-// Base colour with tiny elevation-based brightness tweak
+// Base colour with elevation brightness
 const eb=Math.max(0,Math.min(30,~~(cell.elev*15+8)));
 tc.fillStyle=shiftBrightness(pal[ci],eb);
-tc.fillRect(px,py,TILE,TILE);
+tc.beginPath();
+tc.moveTo(sx,sy-hh); tc.lineTo(sx+hw,sy); tc.lineTo(sx,sy+hh); tc.lineTo(sx-hw,sy);
+tc.closePath(); tc.fill();
 
-// Detail
+// Detail clipped to diamond
 const det=TILE_DETAIL[cell.type];
 if(!det)return;
 
 tc.save();
-// Seed per-tile RNG from position
-const r1=fract(Math.sin(x*127.1+y*311.7)*43758.5453);
-const r2=fract(Math.sin(x*269.5+y*183.3)*43758.5453);
-const r3=fract(Math.sin(x*419.2+y*371.9)*43758.5453);
+tc.beginPath();
+tc.moveTo(sx,sy-hh); tc.lineTo(sx+hw,sy); tc.lineTo(sx,sy+hh); tc.lineTo(sx-hw,sy);
+tc.closePath(); tc.clip();
+
+const r1=fract(Math.sin(tx*127.1+ty*311.7)*43758.5453);
+const r2=fract(Math.sin(tx*269.5+ty*183.3)*43758.5453);
+const r3=fract(Math.sin(tx*419.2+ty*371.9)*43758.5453);
+
+// Map old px,py to approximate center-ish position within diamond
+const TS=ISO_W-4; // approximate tile size for detail positioning
 
 if(det==='ripple'){
-// Water with shimmer bands
 tc.strokeStyle='rgba(255,255,255,0.12)';tc.lineWidth=1;
-tc.beginPath();tc.arc(px+TILE/2+r1*6-3,py+TILE/2+r2*6-3,4+r3*5,0,Math.PI*2);tc.stroke();
+tc.beginPath();tc.arc(sx+r1*8-4,sy+r2*4-2,4+r3*5,0,Math.PI*2);tc.stroke();
 tc.strokeStyle='rgba(255,255,255,0.06)';
-tc.beginPath();tc.arc(px+TILE/2+r3*4,py+TILE/2+r1*4,2+r2*3,0,Math.PI*2);tc.stroke();
-// Sparkle
-if(r3>0.7){tc.fillStyle='rgba(200,230,255,0.3)';tc.fillRect(px+~~(r2*TILE*.8)+2,py+~~(r1*TILE*.8)+2,2,2);}
+tc.beginPath();tc.arc(sx+r3*4,sy+r1*2,2+r2*3,0,Math.PI*2);tc.stroke();
+if(r3>0.7){tc.fillStyle='rgba(200,230,255,0.3)';tc.fillRect(sx+~~(r2*TS*.4)-4,sy+~~(r1*TS*.2)-2,2,2);}
 }
 else if(det==='dots'){
-// Sand — pebbles + grit texture
 tc.fillStyle='rgba(160,130,50,0.25)';
 for(let i=0;i<6;i++){
-const fx=fract(Math.sin((x*13+i)*91.3+y*47.1)*3758);
-const fy=fract(Math.sin((y*17+i)*83.7+x*53.9)*3758);
-tc.beginPath();tc.arc(px+fx*(TILE-4)+2,py+fy*(TILE-4)+2,0.5+fract(Math.sin(i*77.1)*9999)*1.5,0,Math.PI*2);tc.fill();
+const fx=fract(Math.sin((tx*13+i)*91.3+ty*47.1)*3758);
+const fy=fract(Math.sin((ty*17+i)*83.7+tx*53.9)*3758);
+tc.beginPath();tc.arc(sx+(fx-.5)*TS*.5,sy+(fy-.5)*TS*.25,0.5+fract(Math.sin(i*77.1)*9999)*1.5,0,Math.PI*2);tc.fill();
 }
-// Occasional larger pebble
-if(r1>0.6){tc.fillStyle='rgba(140,110,40,0.35)';tc.beginPath();tc.arc(px+r2*TILE*.7+4,py+r3*TILE*.7+4,2+r1*2,0,Math.PI*2);tc.fill();}
-// Wind streak
-if(r3>0.75){tc.strokeStyle='rgba(200,170,80,0.2)';tc.lineWidth=1;tc.beginPath();tc.moveTo(px+r1*TILE,py+r2*TILE);tc.lineTo(px+r1*TILE+8,py+r2*TILE+2);tc.stroke();}
+if(r1>0.6){tc.fillStyle='rgba(140,110,40,0.35)';tc.beginPath();tc.arc(sx+(r2-.5)*TS*.5,sy+(r3-.5)*TS*.25,2+r1*2,0,Math.PI*2);tc.fill();}
 }
 else if(det==='tuft'){
-// Grass cluster — multiple overlapping bush/tuft circles
 if(r1>0.25){
-const bx=px+r2*TILE*.7+4,by=py+r3*TILE*.7+4;
+const bx=sx+(r2-.5)*TS*.5,by=sy+(r3-.5)*TS*.25;
 tc.fillStyle='rgba(50,100,15,0.4)';tc.beginPath();tc.arc(bx,by,3+r1*3,0,Math.PI*2);tc.fill();
 tc.fillStyle='rgba(80,140,25,0.35)';tc.beginPath();tc.arc(bx-2,by-2,2+r3*2,0,Math.PI*2);tc.fill();
-// Blade strokes
 tc.strokeStyle='rgba(90,150,30,0.55)';tc.lineWidth=1;
 if(r3>0.35){tc.beginPath();tc.moveTo(bx+3,by+3);tc.lineTo(bx+1,by-5);tc.stroke();}
 if(r2>0.4){tc.beginPath();tc.moveTo(bx-2,by+2);tc.lineTo(bx-3,by-4);tc.stroke();}
 }
-// Occasional small wildflower dot
-if(r3>0.82){tc.fillStyle='rgba(220,200,60,0.55)';tc.beginPath();tc.arc(px+r1*TILE*.6+5,py+r2*TILE*.6+5,1.5,0,Math.PI*2);tc.fill();}
+if(r3>0.82){tc.fillStyle='rgba(220,200,60,0.55)';tc.beginPath();tc.arc(sx+(r1-.5)*TS*.3,sy+(r2-.5)*TS*.15,1.5,0,Math.PI*2);tc.fill();}
 }
 else if(det==='tree'){
-// Full tree canopy with shadow + radial gradient
-const sz=10+r3*7;
-const cx2=px+5+r1*(TILE-10),cy2=py+5+r2*(TILE-10);
-// Drop shadow ellipse
+const sz=8+r3*6;
+const cx2=sx+(r1-.5)*TS*.3,cy2=sy+(r2-.5)*TS*.15;
 tc.fillStyle='rgba(0,0,0,0.38)';
-tc.beginPath();tc.ellipse(cx2+3,cy2+4,sz*.95,sz*.55,0,0,Math.PI*2);tc.fill();
-// Outer dark canopy ring
+tc.beginPath();tc.ellipse(cx2+2,cy2+2,sz*.8,sz*.4,0,0,Math.PI*2);tc.fill();
 tc.fillStyle='#182e08';
 tc.beginPath();tc.arc(cx2,cy2,sz,0,Math.PI*2);tc.fill();
-// Radial gradient main canopy
 const cg=tc.createRadialGradient(cx2-sz*.25,cy2-sz*.25,0,cx2,cy2,sz);
 cg.addColorStop(0,'#4a8020');cg.addColorStop(0.45,'#326012');cg.addColorStop(1,'#1a3408');
 tc.fillStyle=cg;tc.beginPath();tc.arc(cx2,cy2,sz*.88,0,Math.PI*2);tc.fill();
-// Highlight blob upper-left
 tc.fillStyle='rgba(100,180,45,0.35)';
 tc.beginPath();tc.arc(cx2-sz*.32,cy2-sz*.32,sz*.38,0,Math.PI*2);tc.fill();
-// Tiny second tree if space allows
-if(r3>0.55&&sz<14){
-const cx3=px+(1-r2)*TILE*.5+6,cy3=py+(1-r3)*TILE*.5+6;
-const sz2=6+r1*4;
-tc.fillStyle='rgba(0,0,0,0.3)';tc.beginPath();tc.ellipse(cx3+2,cy3+3,sz2*.9,sz2*.5,0,0,Math.PI*2);tc.fill();
-tc.fillStyle='#265010';tc.beginPath();tc.arc(cx3,cy3,sz2,0,Math.PI*2);tc.fill();
-const cg2=tc.createRadialGradient(cx3-sz2*.2,cy3-sz2*.2,0,cx3,cy3,sz2);
-cg2.addColorStop(0,'#3e7018');cg2.addColorStop(1,'#1e3e0a');
-tc.fillStyle=cg2;tc.beginPath();tc.arc(cx3,cy3,sz2*.85,0,Math.PI*2);tc.fill();
-}
 }
 else if(det==='crack'){
-// Multiple thin cracks for earthy dirt look
-if(r1>0.4){
-tc.strokeStyle='rgba(70,45,15,0.35)';tc.lineWidth=1;
-tc.beginPath();tc.moveTo(px+r1*TILE,py+r2*TILE);tc.lineTo(px+r3*TILE,py+(1-r1)*TILE);tc.stroke();
-}
-if(r2>0.5){
-tc.strokeStyle='rgba(60,38,12,0.25)';tc.lineWidth=1;
-tc.beginPath();tc.moveTo(px+r2*TILE,py+r1*TILE*.5);tc.lineTo(px+(1-r3)*TILE,py+r3*TILE);tc.stroke();
-}
-// Pebble scatter
-tc.fillStyle='rgba(80,55,20,0.3)';
-for(let i=0;i<3;i++){const fx=fract(Math.sin((x+i*3)*91+y*47)*3758);const fy=fract(Math.sin((y+i*5)*83+x*53)*3758);tc.beginPath();tc.arc(px+fx*(TILE-4)+2,py+fy*(TILE-4)+2,1+fract(Math.sin(i*37)*999),0,Math.PI*2);tc.fill();}
+if(r1>0.4){tc.strokeStyle='rgba(70,45,15,0.35)';tc.lineWidth=1;tc.beginPath();tc.moveTo(sx+(r1-.5)*TS*.4,sy+(r2-.5)*TS*.2);tc.lineTo(sx+(r3-.5)*TS*.4,sy+((1-r1)-.5)*TS*.2);tc.stroke();}
+if(r2>0.5){tc.strokeStyle='rgba(60,38,12,0.25)';tc.lineWidth=1;tc.beginPath();tc.moveTo(sx+(r2-.5)*TS*.4,sy+(r1*.5-.25)*TS*.2);tc.lineTo(sx+((1-r3)-.5)*TS*.4,sy+(r3-.5)*TS*.2);tc.stroke();}
 }
 else if(det==='puddle'){
-if(r1>0.5){tc.fillStyle='rgba(35,25,12,0.4)';tc.beginPath();tc.ellipse(px+r1*TILE*.7+4,py+r2*TILE*.7+4,3+r3*5,2+r3*3,r2*Math.PI,0,Math.PI*2);tc.fill();
-tc.fillStyle='rgba(60,50,30,0.2)';tc.beginPath();tc.ellipse(px+r1*TILE*.7+3,py+r2*TILE*.7+3,2+r3*3,1.5+r3*2,r2*Math.PI,0,Math.PI*2);tc.fill();}
+if(r1>0.5){tc.fillStyle='rgba(35,25,12,0.4)';tc.beginPath();tc.ellipse(sx+(r1-.5)*TS*.3,sy+(r2-.5)*TS*.15,3+r3*4,2+r3*2,r2*Math.PI,0,Math.PI*2);tc.fill();}
 }
 else if(det==='striation'){
-// Rock with multiple fissure lines and slight colour variation
 tc.strokeStyle='rgba(20,20,15,0.28)';tc.lineWidth=1.5;
-tc.beginPath();tc.moveTo(px+r2*TILE*.8+2,py);tc.lineTo(px+r3*TILE*.8+2,py+TILE);tc.stroke();
-tc.strokeStyle='rgba(20,20,15,0.18)';tc.lineWidth=1;
-tc.beginPath();tc.moveTo(px,py+r1*TILE);tc.lineTo(px+TILE,py+(r2+.15)*TILE);tc.stroke();
-// Small rock chip
-if(r3>0.6){tc.fillStyle='rgba(100,98,90,0.5)';tc.beginPath();tc.arc(px+r1*TILE*.7+4,py+r2*TILE*.7+4,2+r3*2,0,Math.PI*2);tc.fill();}
+tc.beginPath();tc.moveTo(sx+(r2-.5)*TS*.4,sy-hh);tc.lineTo(sx+(r3-.5)*TS*.4,sy+hh);tc.stroke();
 }
 else if(det==='crystal'){
-// Ore deposit — glowing mineral clusters
-const ox2=px+4+r1*(TILE-10),oy2=py+4+r2*(TILE-10);
+const ox2=sx+(r1-.5)*TS*.3,oy2=sy+(r2-.5)*TS*.15;
 tc.fillStyle='rgba(200,150,10,0.5)';
 tc.beginPath();tc.moveTo(ox2,oy2-5);tc.lineTo(ox2+4,oy2);tc.lineTo(ox2,oy2+5);tc.lineTo(ox2-4,oy2);tc.closePath();tc.fill();
 tc.fillStyle='rgba(255,210,60,0.6)';
 tc.beginPath();tc.moveTo(ox2,oy2-3);tc.lineTo(ox2+2.5,oy2);tc.lineTo(ox2,oy2+3);tc.lineTo(ox2-2.5,oy2);tc.closePath();tc.fill();
-if(r3>0.4){const ox3=px+r3*(TILE-8)+2,oy3=py+(1-r1)*(TILE-8)+2;
-tc.fillStyle='rgba(180,130,0,0.45)';tc.beginPath();tc.moveTo(ox3,oy3-4);tc.lineTo(ox3+3,oy3);tc.lineTo(ox3,oy3+4);tc.lineTo(ox3-3,oy3);tc.closePath();tc.fill();}
-// Glow halo
 tc.fillStyle='rgba(255,200,50,0.12)';tc.beginPath();tc.arc(ox2,oy2,7,0,Math.PI*2);tc.fill();
 }
-// Tile edge shading for elevation depth
-if(cell.elev>0.18&&det!=='ripple'){
-tc.fillStyle='rgba(0,0,0,0.12)';
-tc.fillRect(px,py,TILE,2);
-tc.fillRect(px,py,2,TILE);
-}
-// Subtle vignette on all tiles for depth
-tc.fillStyle='rgba(0,0,0,0.04)';
-tc.fillRect(px+TILE-2,py,2,TILE);tc.fillRect(px,py+TILE-2,TILE,2);
+
 tc.restore();
 }
 
@@ -1459,23 +1444,22 @@ const cam=G.camera, z=gz();
 ctx.save(); ctx.scale(z,z); ctx.translate(-cam.x,-cam.y);
 
 // Draw terrain from cache
-if(terrainCache) ctx.drawImage(terrainCache,0,0);
-
-// Subtle grid overlay (very faint)
-ctx.strokeStyle='rgba(0,0,0,0.07)'; ctx.lineWidth=0.5;
-const sx=Math.max(0,~~(cam.x/TILE)),sy=Math.max(0,~~(cam.y/TILE));
-const ex=Math.min(MAP_W,Math.ceil((cam.x+canvas.width/z)/TILE));
-const ey=Math.min(MAP_H,Math.ceil((cam.y+canvas.height/z)/TILE));
-for(let x=sx;x<=ex;x++){ctx.beginPath();ctx.moveTo(x*TILE,sy*TILE);ctx.lineTo(x*TILE,ey*TILE);ctx.stroke();}
-for(let y=sy;y<=ey;y++){ctx.beginPath();ctx.moveTo(sx*TILE,y*TILE);ctx.lineTo(ex*TILE,y*TILE);ctx.stroke();}
+if(isoTerrainCache) ctx.drawImage(isoTerrainCache,0,0);
 
 // Building placement preview
 if(G.placingBuilding&&previewTX>=0){
 const d=BD[G.placingBuilding],ok=canPlace(G.placingBuilding,previewTX,previewTY,MP.myTeam);
+const{x:psx,y:psy}=isoProject(previewTX*TILE,previewTY*TILE);
+const tw=d.w,th=d.h,hw=ISO_W/2,hh=ISO_H/2;
 ctx.fillStyle=ok?'rgba(0,120,255,0.35)':'rgba(255,0,0,0.35)';
-ctx.fillRect(previewTX*TILE,previewTY*TILE,d.w*TILE,d.h*TILE);
+ctx.beginPath();
+ctx.moveTo(psx,psy-hh);
+ctx.lineTo(psx+tw*hw,psy+(tw-1)*hh);
+ctx.lineTo(psx+tw*hw-th*hw,psy+(tw+th-1)*hh);
+ctx.lineTo(psx-th*hw,psy+(th-1)*hh);
+ctx.closePath();ctx.fill();
 ctx.strokeStyle=ok?'#00aaff':'#f00'; ctx.lineWidth=2;
-ctx.strokeRect(previewTX*TILE,previewTY*TILE,d.w*TILE,d.h*TILE);
+ctx.stroke();
 }
 
 // Selection box
@@ -1488,56 +1472,72 @@ ctx.fillStyle='rgba(0,255,65,0.04)'; ctx.fillRect(bx,by,bw,bh);
 ctx.setLineDash([]);
 }
 
-// Entities
-for(const e of G.entities){
-if(e.hp<=0)continue;
-if(!inView(e,cam,z))continue;
-// Fog of war: skip enemy entities in fog (allies are always visible)
+// Entities — depth sorted for correct iso occlusion
 const _visTeams=G.allies&&G.allies[MP.myTeam]||[MP.myTeam];
+const _visEnts=G.entities.filter(e=>{
+if(e.hp<=0)return false;
+if(!inView(e,cam,z))return false;
 if(G.fog&&!_visTeams.includes(e.team)){
 const etx=e.isBuilding?e.tx:~~(e.x/TILE);
 const ety=e.isBuilding?e.ty:~~(e.y/TILE);
-if((G.fog[ety]?.[etx]??0)<2)continue;
+if((G.fog[ety]?.[etx]??0)<2)return false;
 }
-if(e.isBuilding)drawBldg(e); else drawUnit(e);
-}
+return true;
+});
+_visEnts.sort((a,b)=>{
+const da=(a.isBuilding?a.tx+BD[a.type].w/2:a.x/TILE)+(a.isBuilding?a.ty+BD[a.type].h/2:a.y/TILE);
+const db=(b.isBuilding?b.tx+BD[b.type].w/2:b.x/TILE)+(b.isBuilding?b.ty+BD[b.type].h/2:b.y/TILE);
+return da-db||(a.id||0)-(b.id||0);
+});
+for(const e of _visEnts){if(e.isBuilding)drawBldg(e);else drawUnit(e);}
 
 // Projectiles
 const projColors=['#aaff00','#ff4400','#44ffaa','#ffff44'];
 const projColorsDim=['rgba(170,255,0,0.25)','rgba(255,68,0,0.25)','rgba(68,255,170,0.25)','rgba(255,255,68,0.25)'];
 for(const p of G.projectiles){
+const{x:psx,y:psy}=isoProject(p.x,p.y);
 ctx.fillStyle=projColors[p.team]||'#ffffff';
-ctx.beginPath(); ctx.arc(p.x,p.y,3,0,Math.PI*2); ctx.fill();
+ctx.beginPath(); ctx.arc(psx,psy,3,0,Math.PI*2); ctx.fill();
+const{x:ptx,y:pty}=isoProject(p.x-p.vx*.5,p.y-p.vy*.5);
 ctx.fillStyle=projColorsDim[p.team]||'rgba(255,255,255,0.25)';
-ctx.beginPath(); ctx.arc(p.x-p.vx*.01,p.y-p.vy*.01,2,0,Math.PI*2); ctx.fill();
+ctx.beginPath(); ctx.arc(ptx,pty,2,0,Math.PI*2); ctx.fill();
 }
 
-// Fog overlay
+// Fog overlay — diamond tiles
 if(G.fog){
-for(let y=sy;y<ey;y++)for(let x=sx;x<ex;x++){
-const f=G.fog[y]?.[x]??0;
+const hw=ISO_W/2,hh=ISO_H/2;
+for(let sum=0;sum<MAP_W+MAP_H-1;sum++){
+for(let ftx=Math.max(0,sum-(MAP_H-1));ftx<=Math.min(sum,MAP_W-1);ftx++){
+const fty=sum-ftx;
+const f=G.fog[fty]?.[ftx]??0;
 if(f===2)continue;
+const{x:fsx,y:fsy}=isoProject(ftx*TILE,fty*TILE);
 ctx.fillStyle=f===1?'rgba(0,0,0,0.55)':'rgba(0,0,0,0.88)';
-ctx.fillRect(x*TILE,y*TILE,TILE,TILE);
+ctx.beginPath();
+ctx.moveTo(fsx,fsy-hh);ctx.lineTo(fsx+hw,fsy);ctx.lineTo(fsx,fsy+hh);ctx.lineTo(fsx-hw,fsy);
+ctx.closePath();ctx.fill();
+}
 }
 }
 
 // Particles
 for(const p of G.particles){
+const{x:ppsx,y:ppsy}=isoProject(p.x,p.y);
 ctx.globalAlpha=Math.max(0,p.life/1.2);
-ctx.fillStyle=p.color; ctx.fillRect(p.x-2,p.y-2,4,4);
+ctx.fillStyle=p.color; ctx.fillRect(ppsx-2,ppsy-2,4,4);
 }
 ctx.globalAlpha=1;
 
 // Move destination markers
 if(G.moveMarkers){
 for(const m of G.moveMarkers){
+const{x:mmsx,y:mmsy}=isoProject(m.x,m.y);
 const a=m.life,r2=12*(1-m.life*0.5);
 const mmColors=['rgba(0,200,255,','rgba(255,100,0,','rgba(0,255,150,','rgba(255,255,0,'];
 ctx.strokeStyle=(mmColors[m.team]||'rgba(200,200,200,')+a+')';
 ctx.lineWidth=2;
-ctx.beginPath();ctx.arc(m.x,m.y,r2,0,Math.PI*2);ctx.stroke();
-ctx.beginPath();ctx.arc(m.x,m.y,r2*0.4,0,Math.PI*2);ctx.stroke();
+ctx.beginPath();ctx.ellipse(mmsx,mmsy,r2,r2*0.5,0,0,Math.PI*2);ctx.stroke();
+ctx.beginPath();ctx.ellipse(mmsx,mmsy,r2*0.4,r2*0.2,0,0,Math.PI*2);ctx.stroke();
 }
 }
 
@@ -1546,7 +1546,8 @@ const _visTeams2=G.allies&&G.allies[MP.myTeam]||[MP.myTeam];
 for(const e of G.entities){
 if(e.isBuilding&&e.complete&&_visTeams2.includes(e.team)&&e.rally){
 ctx.font='14px serif';ctx.textAlign='left';ctx.textBaseline='alphabetic';
-ctx.fillText('🚩',e.rally.x-8,e.rally.y+6);
+const{x:rfsx,y:rfsy}=isoProject(e.rally.x,e.rally.y);
+ctx.fillText('🚩',rfsx-8,rfsy+6);
 }
 }
 
@@ -1556,7 +1557,8 @@ ctx.textAlign='center';ctx.font='bold 11px Share Tech Mono,monospace';
 for(const n of G.dmgNums){
 ctx.globalAlpha=Math.min(1,n.life*1.5);
 ctx.fillStyle=n.val>40?'#ff4400':'#ffdd00';
-ctx.fillText('-'+n.val,n.x,n.y);
+const{x:dnsx,y:dnsy}=isoProject(n.x,n.y);
+ctx.fillText('-'+n.val,dnsx,dnsy);
 }
 ctx.globalAlpha=1;ctx.textAlign='left';
 }
@@ -2076,41 +2078,124 @@ pane(x+3,y+h*0.25,7,8); pane(x+w-10,y+h*0.25,7,8);
 const repairingNearby=G.entities.some(e=>e.isUnit&&e.state==='repairBay'&&e.repairBayRef&&e.repairBayRef.id===undefined);
 if((G.tick%8)<4){ctx.fillStyle='rgba(255,200,0,0.7)';ctx.beginPath();ctx.arc(cx2+(Math.random()-.5)*10,cy2+(Math.random()-.5)*10,1.5,0,Math.PI*2);ctx.fill();}
 }
+// ── ISO BUILDING GEOMETRY HELPERS ─────────────────────────
+function isoFootprint(sx,sy,tw,th){
+const hw=ISO_W/2,hh=ISO_H/2;
+return{
+top:{x:sx,y:sy},
+right:{x:sx+tw*hw,y:sy+tw*hh},
+bot:{x:sx+tw*hw-th*hw,y:sy+tw*hh+th*hh},
+left:{x:sx-th*hw,y:sy+th*hh}
+};
+}
+
+function drawQuad(a,b,c,d,col){
+ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.lineTo(d.x,d.y);ctx.closePath();
+ctx.fillStyle=col;ctx.fill();
+}
+
+function drawIsoBox(sx,sy,tw,th,bh,topCol,swCol,seCol){
+const f=isoFootprint(sx,sy,tw,th);
+const hw=ISO_W/2,hh=ISO_H/2;
+// SW face
+drawQuad(f.left,f.bot,{x:f.bot.x,y:f.bot.y+bh},{x:f.left.x,y:f.left.y+bh},swCol);
+// SE face
+drawQuad(f.bot,f.right,{x:f.right.x,y:f.right.y+bh},{x:f.bot.x,y:f.bot.y+bh},seCol);
+// Top face
+drawQuad(f.top,f.right,f.bot,f.left,topCol);
+// Outline
+ctx.strokeStyle='rgba(0,0,0,0.4)';ctx.lineWidth=1;
+ctx.beginPath();ctx.moveTo(f.top.x,f.top.y);ctx.lineTo(f.right.x,f.right.y);ctx.lineTo(f.bot.x,f.bot.y);ctx.lineTo(f.left.x,f.left.y);ctx.closePath();ctx.stroke();
+ctx.beginPath();ctx.moveTo(f.bot.x,f.bot.y);ctx.lineTo(f.bot.x,f.bot.y+bh);ctx.stroke();
+ctx.beginPath();ctx.moveTo(f.left.x,f.left.y);ctx.lineTo(f.left.x,f.left.y+bh);ctx.stroke();
+ctx.beginPath();ctx.moveTo(f.right.x,f.right.y);ctx.lineTo(f.right.x,f.right.y+bh);ctx.stroke();
+}
+
+// Building heights for iso rendering
+const BLD_H={ConYard:52,Power:60,Refinery:48,Barracks:40,WarFac:56,Turret:20,Radar:44,RepairBay:44};
+
 // ── MAIN BUILDING DISPATCHER ──────────────────────────────
 function drawBldg(b){
 const d=BD[b.type];
-const x=b.tx*TILE, y=b.ty*TILE, w=d.w*TILE, h=d.h*TILE;
-if(!b.complete){ drawFoundation(x,y,w,h); drawUnderConstruction(b); return; }
-drawFoundation(x,y,w,h);
+const{x:sx,y:sy}=isoProject(b.tx*TILE,b.ty*TILE);
+const tw=d.w,th=d.h;
+const bh=BLD_H[b.type]||40;
+const p=TPAL[b.team];
+
+if(!b.complete){
+// Under construction: simple flat diamond outline
+const f=isoFootprint(sx,sy,tw,th);
+ctx.strokeStyle='#ffaa00';ctx.lineWidth=2;ctx.setLineDash([4,4]);
+ctx.beginPath();ctx.moveTo(f.top.x,f.top.y);ctx.lineTo(f.right.x,f.right.y);ctx.lineTo(f.bot.x,f.bot.y);ctx.lineTo(f.left.x,f.left.y);ctx.closePath();ctx.stroke();
+ctx.setLineDash([]);
+ctx.fillStyle='rgba(255,170,0,0.2)';ctx.fill();
+const pct=b.buildProg||0;
+const boty=f.bot.y+16;
+ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(f.left.x,boty,f.right.x-f.left.x,5);
+ctx.fillStyle='#ffaa00';ctx.fillRect(f.left.x+1,boty+1,Math.max(0,(f.right.x-f.left.x-2)*pct),3);
+return;
+}
+
+// Draw iso box with team colors
+drawIsoBox(sx,sy,tw,th,bh,p.mid,p.dark,p.base);
+
+// Building-specific top details
 ctx.save();
 switch(b.type){
-case 'ConYard': drawBuilding_ConYard(x,y,w,h,b.team); break;
-case 'Power': drawBuilding_Power(x,y,w,h,b.team); break;
-case 'Refinery': drawBuilding_Refinery(x,y,w,h,b.team); break;
-case 'Barracks': drawBuilding_Barracks(x,y,w,h,b.team); break;
-case 'WarFac': drawBuilding_WarFac(x,y,w,h,b.team); break;
-case 'Turret': drawBuilding_Turret(x,y,w,h,b.team); break;
-case 'Radar': drawBuilding_Radar(x,y,w,h,b.team); break;
-case 'RepairBay': drawBuilding_RepairBay(x,y,w,h,b.team); break;
-default:
-dropShadow(x,y,w,h,3); panel(x,y,w,h,TPAL[b.team].mid,TPAL[b.team].dark);
+case 'ConYard':{
+// Antenna
+const ap=isoProject((b.tx+tw/2)*TILE,(b.ty+th/3)*TILE);
+ctx.strokeStyle='#888';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(ap.x,ap.y);ctx.lineTo(ap.x,ap.y-bh-20);ctx.stroke();
+ctx.fillStyle='#f00';ctx.beginPath();ctx.arc(ap.x,ap.y-bh-20,4,0,Math.PI*2);ctx.fill();
+break;}
+case 'Power':{
+// Lightning bolt icon on top face
+const pp=isoProject((b.tx+tw/2)*TILE,(b.ty+th/2)*TILE);
+ctx.fillStyle='#ffee00';ctx.font='bold 16px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+ctx.fillText('⚡',pp.x,pp.y-bh/2);
+break;}
+case 'Radar':{
+// Dish on top
+const rp=isoProject((b.tx+tw/2)*TILE,(b.ty+th/2)*TILE);
+ctx.strokeStyle=p.acc;ctx.lineWidth=2;
+ctx.beginPath();ctx.arc(rp.x,rp.y-bh-4,10,Math.PI,0);ctx.stroke();
+ctx.beginPath();ctx.moveTo(rp.x,rp.y-bh);ctx.lineTo(rp.x,rp.y-bh-14);ctx.stroke();
+break;}
+case 'Turret':{
+// Barrel pointing forward
+const tp2=isoProject((b.tx+0.5)*TILE,(b.ty+0.5)*TILE);
+ctx.strokeStyle=p.steel;ctx.lineWidth=4;
+ctx.beginPath();ctx.moveTo(tp2.x,tp2.y-bh+4);ctx.lineTo(tp2.x+14,tp2.y-bh+12);ctx.stroke();
+break;}
+case 'Barracks':{
+const bp=isoProject((b.tx+tw/2)*TILE,(b.ty+th/2)*TILE);
+ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='12px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+ctx.fillText('★',bp.x,bp.y-bh/2);
+break;}
+default:break;
 }
 ctx.restore();
-// Always show HP bar if damaged
-if(b.hp<b.maxHp){hpBar(x,y-8,w,b.hp,b.maxHp);}
+
+// HP bar
+if(b.hp<b.maxHp){
+const f=isoFootprint(sx,sy,tw,th);
+const barW=f.right.x-f.left.x;
+hpBar(f.left.x,f.bot.y+bh+2,barW,b.hp,b.maxHp);
+}
+// Build queue progress
 if(b.bq&&b.bq.length>0){
 const item=b.bq[0],pct=item.prog/item.bt;
-ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(x,y+h+1,w,5);
-ctx.fillStyle='#00ee44';ctx.fillRect(x+1,y+h+2,(w-2)*pct,3);
+const f=isoFootprint(sx,sy,tw,th);
+const barW=f.right.x-f.left.x;
+ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(f.left.x,f.bot.y+bh+8,barW,5);
+ctx.fillStyle='#00ee44';ctx.fillRect(f.left.x+1,f.bot.y+bh+9,Math.max(0,(barW-2)*pct),3);
 }
+// Selection highlight
 if(G.selected.includes(b)){
-ctx.strokeStyle='#00ff55'; ctx.lineWidth=2; ctx.setLineDash([5,3]);
-ctx.strokeRect(x-2,y-2,w+4,h+4); ctx.setLineDash([]);
-// Corner brackets
-ctx.lineWidth=3; ctx.setLineDash([]);
-for(const[cx2,cy2,sx,sy]of[[x-2,y-2,1,1],[x+w+2,y-2,-1,1],[x-2,y+h+2,1,-1],[x+w+2,y+h+2,-1,-1]]){
-ctx.beginPath();ctx.moveTo(cx2+sx*8,cy2);ctx.lineTo(cx2,cy2);ctx.lineTo(cx2,cy2+sy*8);ctx.stroke();
-}
+const f=isoFootprint(sx,sy,tw,th);
+ctx.strokeStyle='#00ff55';ctx.lineWidth=2;ctx.setLineDash([4,4]);
+ctx.beginPath();ctx.moveTo(f.top.x,f.top.y);ctx.lineTo(f.right.x,f.right.y);ctx.lineTo(f.bot.x,f.bot.y);ctx.lineTo(f.left.x,f.left.y);ctx.closePath();ctx.stroke();
+ctx.setLineDash([]);
 }
 }
 
@@ -2128,8 +2213,8 @@ if(u.facing===undefined) u.facing=0;
 }
 
 // ── TANK (Grizzly MBT) ─────────────────────────────────────
-function drawUnit_Tank(u,p){
-ctx.save(); ctx.translate(u.x,u.y); ctx.rotate(u.facing||0);
+function drawUnit_Tank(u,p,sx,sy){
+ctx.save(); ctx.translate(sx,sy); ctx.rotate((u.facing||0)-Math.PI/4);
 // Ground shadow
 ctx.fillStyle='rgba(0,0,0,0.32)';
 ctx.beginPath();ctx.ellipse(1,4,15,6,0,0,Math.PI*2);ctx.fill();
@@ -2196,8 +2281,8 @@ ctx.restore();
 }
 
 // ── IFV ────────────────────────────────────────────────────
-function drawUnit_IFV(u,p){
-ctx.save(); ctx.translate(u.x,u.y); ctx.rotate(u.facing||0);
+function drawUnit_IFV(u,p,sx,sy){
+ctx.save(); ctx.translate(sx,sy); ctx.rotate((u.facing||0)-Math.PI/4);
 ctx.fillStyle='rgba(0,0,0,0.28)';
 ctx.beginPath();ctx.ellipse(0,3,12,5,0,0,Math.PI*2);ctx.fill();
 // Wheels
@@ -2241,8 +2326,8 @@ ctx.restore();
 }
 
 // ── GI (Infantry) ──────────────────────────────────────────
-function drawUnit_GI(u,p){
-ctx.save(); ctx.translate(u.x,u.y);
+function drawUnit_GI(u,p,sx,sy){
+ctx.save(); ctx.translate(sx,sy);
 // Shadow
 ctx.fillStyle='rgba(0,0,0,0.3)';
 ctx.beginPath();ctx.ellipse(0,5,5,2.5,0,0,Math.PI*2);ctx.fill();
@@ -2283,8 +2368,8 @@ ctx.restore();
 }
 
 // ── SNIPER ─────────────────────────────────────────────────
-function drawUnit_Rifleman(u,p){
-ctx.save(); ctx.translate(u.x,u.y);
+function drawUnit_Rifleman(u,p,sx,sy){
+ctx.save(); ctx.translate(sx,sy);
 ctx.fillStyle='rgba(0,0,0,0.25)';
 ctx.beginPath();ctx.ellipse(0,5,5,2.5,0,0,Math.PI*2);ctx.fill();
 // Prone legs
@@ -2313,8 +2398,8 @@ ctx.restore();
 }
 
 // ── WAR DOG ────────────────────────────────────────────────
-function drawUnit_Dog(u,p){
-ctx.save(); ctx.translate(u.x,u.y); ctx.rotate(u.facing||0);
+function drawUnit_Dog(u,p,sx,sy){
+ctx.save(); ctx.translate(sx,sy); ctx.rotate((u.facing||0)-Math.PI/4);
 ctx.fillStyle='rgba(0,0,0,0.25)';
 ctx.beginPath();ctx.ellipse(0,4,8,3,0,0,Math.PI*2);ctx.fill();
 // Tail (animated wag)
@@ -2359,8 +2444,8 @@ ctx.restore();
 }
 
 // ── ORE HARVESTER ──────────────────────────────────────────
-function drawUnit_Harvester(u,p){
-ctx.save(); ctx.translate(u.x,u.y); ctx.rotate(u.facing||0);
+function drawUnit_Harvester(u,p,sx,sy){
+ctx.save(); ctx.translate(sx,sy); ctx.rotate((u.facing||0)-Math.PI/4);
 ctx.fillStyle='rgba(0,0,0,0.35)';
 ctx.beginPath();ctx.ellipse(0,6,18,7,0,0,Math.PI*2);ctx.fill();
 // Large dual rear tyres
@@ -2419,8 +2504,8 @@ ctx.restore();
 }
 
 // ── REPAIRMAN ──────────────────────────────────────────
-function drawUnit_Repairman(u,p){
-ctx.save(); ctx.translate(u.x,u.y);
+function drawUnit_Repairman(u,p,sx,sy){
+ctx.save(); ctx.translate(sx,sy);
 // Shadow
 ctx.fillStyle='rgba(0,0,0,0.3)';
 ctx.beginPath();ctx.ellipse(0,5,5,2.5,0,0,Math.PI*2);ctx.fill();
@@ -2468,33 +2553,33 @@ function drawUnit(u){
 if(u.hp<=0)return;
 updateUnitFacing(u);
 const p=TPAL[u.team];
+const{x:sx,y:sy}=isoProject(u.x,u.y);
 switch(u.type){
-case 'Tank': drawUnit_Tank(u,p); break;
-case 'IFV': drawUnit_IFV(u,p); break;
-case 'GI': drawUnit_GI(u,p); break;
-case 'Rifleman': drawUnit_Rifleman(u,p); break;
-case 'Dog': drawUnit_Dog(u,p); break;
-case 'Harvester': drawUnit_Harvester(u,p); break;
-case 'Repairman': drawUnit_Repairman(u,p); break;
+case 'Tank': drawUnit_Tank(u,p,sx,sy); break;
+case 'IFV': drawUnit_IFV(u,p,sx,sy); break;
+case 'GI': drawUnit_GI(u,p,sx,sy); break;
+case 'Rifleman': drawUnit_Rifleman(u,p,sx,sy); break;
+case 'Dog': drawUnit_Dog(u,p,sx,sy); break;
+case 'Harvester': drawUnit_Harvester(u,p,sx,sy); break;
+case 'Repairman': drawUnit_Repairman(u,p,sx,sy); break;
 default:
 ctx.fillStyle=p.base;
-ctx.beginPath();ctx.arc(u.x,u.y,9,0,Math.PI*2);ctx.fill();
+ctx.beginPath();ctx.arc(sx,sy,9,0,Math.PI*2);ctx.fill();
 }
 const r=u.type==='Harvester'?16:u.type==='Tank'?15:u.type==='IFV'?12:9;
-hpBar(u.x-r,u.y-r-6,r*2,u.hp,u.maxHp);
+hpBar(sx-r,sy-r-6,r*2,u.hp,u.maxHp);
 if(u.type==='Harvester'&&u.ore>0){
 ctx.fillStyle='#ffdd00';ctx.font='bold 8px monospace';
 ctx.textAlign='center';ctx.textBaseline='middle';
-ctx.fillText(`${~~(u.ore/u.maxOre*100)}%`,u.x,u.y-r-15);
+ctx.fillText(`${~~(u.ore/u.maxOre*100)}%`,sx,sy-r-15);
 }
 if(G.selected.includes(u)){
 ctx.strokeStyle='#00ff55';ctx.lineWidth=2;ctx.setLineDash([3,3]);
-ctx.beginPath();ctx.arc(u.x,u.y,r+5,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
-// Corner ticks
+ctx.beginPath();ctx.ellipse(sx,sy,r+5,(r+5)*0.5,0,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
 ctx.lineWidth=2.5;ctx.setLineDash([]);
 for(let a=0;a<Math.PI*2;a+=Math.PI/2){
 ctx.beginPath();
-ctx.arc(u.x,u.y,r+5,a,a+0.4);ctx.stroke();
+ctx.arc(sx,sy,r+5,a,a+0.4);ctx.stroke();
 }
 }
 }
@@ -2547,13 +2632,15 @@ mctx.fillRect(~~(x*mw/MAP_W),~~(y*mh/MAP_H),Math.ceil(mw/MAP_W)+1,Math.ceil(mh/M
 }
 }
 const z=gz(),cam=G.camera;
+const{x:camWX,y:camWY}=isoUnproject(cam.x,cam.y);
 mctx.strokeStyle='rgba(255,255,255,0.5)';mctx.lineWidth=1;
-mctx.strokeRect(~~(cam.x/PW*mw),~~(cam.y/PH*mh),~~(canvas.width/z/PW*mw),~~(canvas.height/z/PH*mh));
+mctx.strokeRect(~~(camWX/PW*mw),~~(camWY/PH*mh),~~(canvas.width/z/ISO_PW*mw*2),~~(canvas.height/z/ISO_PH*mh*2));
 }
 
 function inView(e,cam,z){
-const ex=e.x!==undefined?e.x:e.tx*TILE,ey=e.y!==undefined?e.y:e.ty*TILE;
-return ex>=cam.x-100&&ex<=cam.x+canvas.width/z+100&&ey>=cam.y-100&&ey<=cam.y+canvas.height/z+100;
+const wx=e.x!==undefined?e.x:e.tx*TILE,wy=e.y!==undefined?e.y:e.ty*TILE;
+const{x:isx,y:isy}=isoProject(wx,wy);
+return isx>=cam.x-200&&isx<=cam.x+canvas.width/z+200&&isy>=cam.y-200&&isy<=cam.y+canvas.height/z+200;
 }
 
 // ─── UI ───────────────────────────────────────────────
@@ -2807,7 +2894,9 @@ showMsg(`Training ${d.name}… (${d.bt}s)`);
 // ─── INPUT ────────────────────────────────────────────
 function getWXY(clientX,clientY){
 const r=canvas.getBoundingClientRect(),z=gz();
-return{x:(clientX-r.left)/z+G.camera.x,y:(clientY-r.top)/z+G.camera.y};
+const sx=(clientX-r.left)/z+G.camera.x;
+const sy=(clientY-r.top)/z+G.camera.y;
+return isoUnproject(sx,sy);
 }
 
 // Find a friendly entity at world coords. Returns null if none.
@@ -3031,8 +3120,8 @@ selBox=touchSelBox;
 } else {
 // Drag from empty → pan camera
 touchSelBox=null; selBox=null;
-G.camera.x=Math.max(0,Math.min(PW-canvas.width/z,pStart.cx-dx/z));
-G.camera.y=Math.max(0,Math.min(PH-canvas.height/z,pStart.cy-dy/z));
+G.camera.x=Math.max(0,Math.min(ISO_PW-canvas.width/z,pStart.cx-dx/z));
+G.camera.y=Math.max(0,Math.min(ISO_PH-canvas.height/z,pStart.cy-dy/z));
 }
 }
 const{x:wx,y:wy}=getWXY(t[0].clientX,t[0].clientY);
@@ -3046,8 +3135,8 @@ const cx=(t[0].clientX+t[1].clientX)/2,cy=(t[0].clientY+t[1].clientY)/2;
 const r=canvas.getBoundingClientRect();
 const ox=(cx-r.left)/G.camera.zoom+G.camera.x,oy=(cy-r.top)/G.camera.zoom+G.camera.y;
 G.camera.zoom=nz;
-G.camera.x=Math.max(0,Math.min(PW-canvas.width/nz,ox-(cx-r.left)/nz));
-G.camera.y=Math.max(0,Math.min(PH-canvas.height/nz,oy-(cy-r.top)/nz));
+G.camera.x=Math.max(0,Math.min(ISO_PW-canvas.width/nz,ox-(cx-r.left)/nz));
+G.camera.y=Math.max(0,Math.min(ISO_PH-canvas.height/nz,oy-(cy-r.top)/nz));
 }
 },{passive:false});
 
@@ -3078,8 +3167,8 @@ if(Math.sqrt(dx*dx+dy*dy)>6){isDragging=true;selBox={x1:selStart.x,y1:selStart.y
 const edge=40,spd=6,z=gz();
 if(e.clientX<edge)G.camera.x-=spd/z;if(e.clientX>window.innerWidth-edge)G.camera.x+=spd/z;
 if(e.clientY<edge+44)G.camera.y-=spd/z;if(e.clientY>window.innerHeight-edge-72)G.camera.y+=spd/z;
-G.camera.x=Math.max(0,Math.min(PW-canvas.width/z,G.camera.x));
-G.camera.y=Math.max(0,Math.min(PH-canvas.height/z,G.camera.y));
+G.camera.x=Math.max(0,Math.min(ISO_PW-canvas.width/z,G.camera.x));
+G.camera.y=Math.max(0,Math.min(ISO_PH-canvas.height/z,G.camera.y));
 });
 
 canvas.addEventListener('mousedown',e=>{
@@ -3142,8 +3231,8 @@ let cx,cy;
 if(isTouch){e.preventDefault();const t=e.changedTouches[0];cx=t.clientX;cy=t.clientY;}
 else{cx=e.clientX;cy=e.clientY;}
 const r=MC.getBoundingClientRect(),mx=(cx-r.left)/MC.width,my=(cy-r.top)/MC.height,z=gz();
-G.camera.x=Math.max(0,Math.min(PW-canvas.width/z,mx*PW-canvas.width/z/2));
-G.camera.y=Math.max(0,Math.min(PH-canvas.height/z,my*PH-canvas.height/z/2));
+G.camera.x=Math.max(0,Math.min(ISO_PW-canvas.width/z,mx*ISO_PW-canvas.width/z/2));
+G.camera.y=Math.max(0,Math.min(ISO_PH-canvas.height/z,my*ISO_PH-canvas.height/z/2));
 };
 MC.addEventListener('click',e=>mmEvt(e,false));
 MC.addEventListener('touchend',e=>mmEvt(e,true),{passive:false});
@@ -3176,8 +3265,8 @@ if(keys['ArrowLeft']||keys['a'])G.camera.x-=spd/z;
 if(keys['ArrowRight']||keys['d'])G.camera.x+=spd/z;
 if(keys['ArrowUp']||keys['w'])G.camera.y-=spd/z;
 if(keys['ArrowDown']||keys['s'])G.camera.y+=spd/z;
-G.camera.x=Math.max(0,Math.min(PW-canvas.width/z,G.camera.x));
-G.camera.y=Math.max(0,Math.min(PH-canvas.height/z,G.camera.y));
+G.camera.x=Math.max(0,Math.min(ISO_PW-canvas.width/z,G.camera.x));
+G.camera.y=Math.max(0,Math.min(ISO_PH-canvas.height/z,G.camera.y));
 requestAnimationFrame(scrollCamera);
 }
 
@@ -3428,8 +3517,8 @@ mpApplyState(msg);
 setupBuildPanel(); resizeCanvas();
 G.camera.zoom=window.innerWidth<600?.7:1;
 const myCony=G.entities.find(e=>e.isBuilding&&e.type==='ConYard'&&e.team===MP.myTeam);
-if(myCony){G.camera.x=Math.max(0,myCony.tx*TILE-canvas.width/(2*G.camera.zoom));G.camera.y=Math.max(0,myCony.ty*TILE-canvas.height/(2*G.camera.zoom));}
-else{G.camera.x=PW-canvas.width/G.camera.zoom;G.camera.y=PH-canvas.height/G.camera.zoom;}
+if(myCony){const{x:_cix,y:_ciy}=isoProject(myCony.tx*TILE,myCony.ty*TILE);G.camera.x=Math.max(0,_cix-canvas.width/(2*G.camera.zoom));G.camera.y=Math.max(0,_ciy-canvas.height/(2*G.camera.zoom));}
+else{G.camera.x=ISO_PW-canvas.width/G.camera.zoom;G.camera.y=ISO_PH-canvas.height/G.camera.zoom;}
 if(!G._loopStarted){G._loopStarted=true;scrollCamera();requestAnimationFrame(gameLoop);}
 playSound('ready');
 const teamNames=['Blue','Red','Green','Yellow'];
@@ -3627,8 +3716,8 @@ const z=gz(),nz=Math.max(0.4,Math.min(2.5,z*factor));
 const cx=canvas.width/2,cy=canvas.height/2;
 const wx=cx/z+G.camera.x,wy=cy/z+G.camera.y;
 G.camera.zoom=nz;
-G.camera.x=Math.max(0,Math.min(PW-canvas.width/nz,wx-cx/nz));
-G.camera.y=Math.max(0,Math.min(PH-canvas.height/nz,wy-cy/nz));
+G.camera.x=Math.max(0,Math.min(ISO_PW-canvas.width/nz,wx-cx/nz));
+G.camera.y=Math.max(0,Math.min(ISO_PH-canvas.height/nz,wy-cy/nz));
 }
 // Scroll-wheel zoom
 canvas.addEventListener('wheel',e=>{
@@ -3640,8 +3729,8 @@ const rect=canvas.getBoundingClientRect();
 const mx=(e.clientX-rect.left)/z+G.camera.x;
 const my=(e.clientY-rect.top)/z+G.camera.y;
 G.camera.zoom=nz;
-G.camera.x=Math.max(0,Math.min(PW-canvas.width/nz,mx-( e.clientX-rect.left)/nz));
-G.camera.y=Math.max(0,Math.min(PH-canvas.height/nz,my-(e.clientY-rect.top)/nz));
+G.camera.x=Math.max(0,Math.min(ISO_PW-canvas.width/nz,mx-(e.clientX-rect.left)/nz));
+G.camera.y=Math.max(0,Math.min(ISO_PH-canvas.height/nz,my-(e.clientY-rect.top)/nz));
 },{passive:false});
 
 function startGame(){
@@ -3650,8 +3739,9 @@ initGame(); setupBuildPanel(); resizeCanvas();
 G.camera.zoom=window.innerWidth<600?.7:1;
 // Camera starts at team 0's spawn (top-left)
 const myStart=SPAWN_CORNERS[MP.myTeam]||SPAWN_CORNERS[0];
-G.camera.x=Math.max(0,myStart.bx*TILE-canvas.width/(2*G.camera.zoom));
-G.camera.y=Math.max(0,myStart.by*TILE-canvas.height/(2*G.camera.zoom));
+const {x: _camIsoX, y: _camIsoY} = isoProject(myStart.bx*TILE, myStart.by*TILE);
+G.camera.x=Math.max(0,_camIsoX-canvas.width/(2*G.camera.zoom));
+G.camera.y=Math.max(0,_camIsoY-canvas.height/(2*G.camera.zoom));
 if(!G._loopStarted){G._loopStarted=true;scrollCamera();requestAnimationFrame(gameLoop);}
 playSound('ready');
 showMsg('⚔️ Red Alert! Destroy the enemy base!');
