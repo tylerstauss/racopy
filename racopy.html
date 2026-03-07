@@ -884,7 +884,7 @@ if(item.prog>=item.bt){
 e.bq.shift();
 const u=mkUnit(item.type,e.team,e.tx*TILE+e.so.x,e.ty*TILE+e.so.y);
 if(item.type==='Harvester'){u.ref=G.entities.find(r=>r.type==='Refinery'&&r.team===e.team);u.state='findOre';}
-if(e.rally){u.state='move';u.path=fp(u.x,u.y,e.rally.x,e.rally.y);}
+else if(e.rally){u.state='move';u.path=fp(u.x,u.y,e.rally.x,e.rally.y);}
 if(e.team===MP.myTeam){showMsg(`${UD[item.type].name} ready!`);playSound('build');}
 }
 }
