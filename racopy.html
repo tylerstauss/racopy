@@ -2114,89 +2114,223 @@ ctx.beginPath();ctx.moveTo(f.right.x,f.right.y);ctx.lineTo(f.right.x,f.right.y+b
 // Building heights for iso rendering
 const BLD_H={ConYard:52,Power:60,Refinery:48,Barracks:40,WarFac:56,Turret:20,Radar:44,RepairBay:44};
 
+// Bilinear interpolation on a parallelogram face
+// tl=top-left, tr=top-right, br=bottom-right, bl=bottom-left (screen coords)
+function facePoint(tl,tr,br,bl,u,v){
+const tx=tl.x+(tr.x-tl.x)*u,ty=tl.y+(tr.y-tl.y)*u;
+const bx=bl.x+(br.x-bl.x)*u,by=bl.y+(br.y-bl.y)*u;
+return{x:tx+(bx-tx)*v,y:ty+(by-ty)*v};
+}
+function drawFaceRect(tl,tr,br,bl,u1,v1,u2,v2,col){
+const p0=facePoint(tl,tr,br,bl,u1,v1),p1=facePoint(tl,tr,br,bl,u2,v1);
+const p2=facePoint(tl,tr,br,bl,u2,v2),p3=facePoint(tl,tr,br,bl,u1,v2);
+ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.lineTo(p3.x,p3.y);ctx.closePath();ctx.fill();
+}
+
 // ── MAIN BUILDING DISPATCHER ──────────────────────────────
 function drawBldg(b){
 const d=BD[b.type];
-const{x:sx,y:sy}=isoProject(b.tx*TILE,b.ty*TILE);
+const{x:bsx,y:bsy}=isoProject(b.tx*TILE,b.ty*TILE);
 const tw=d.w,th=d.h;
 const bh=BLD_H[b.type]||40;
 const p=TPAL[b.team];
+const f=isoFootprint(bsx,bsy,tw,th);
+const fl=f.left,fb=f.bot,fr=f.right,ft=f.top;
+const flb={x:fl.x,y:fl.y+bh},fbb={x:fb.x,y:fb.y+bh},frb={x:fr.x,y:fr.y+bh};
 
 if(!b.complete){
-// Under construction: simple flat diamond outline
-const f=isoFootprint(sx,sy,tw,th);
 ctx.strokeStyle='#ffaa00';ctx.lineWidth=2;ctx.setLineDash([4,4]);
-ctx.beginPath();ctx.moveTo(f.top.x,f.top.y);ctx.lineTo(f.right.x,f.right.y);ctx.lineTo(f.bot.x,f.bot.y);ctx.lineTo(f.left.x,f.left.y);ctx.closePath();ctx.stroke();
-ctx.setLineDash([]);
-ctx.fillStyle='rgba(255,170,0,0.2)';ctx.fill();
+ctx.beginPath();ctx.moveTo(ft.x,ft.y);ctx.lineTo(fr.x,fr.y);ctx.lineTo(fb.x,fb.y);ctx.lineTo(fl.x,fl.y);ctx.closePath();ctx.stroke();
+ctx.setLineDash([]);ctx.fillStyle='rgba(255,170,0,0.2)';ctx.fill();
 const pct=b.buildProg||0;
-const boty=f.bot.y+16;
-ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(f.left.x,boty,f.right.x-f.left.x,5);
-ctx.fillStyle='#ffaa00';ctx.fillRect(f.left.x+1,boty+1,Math.max(0,(f.right.x-f.left.x-2)*pct),3);
+ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(fl.x,fbb.y-14,fr.x-fl.x,5);
+ctx.fillStyle='#ffaa00';ctx.fillRect(fl.x+1,fbb.y-13,Math.max(0,(fr.x-fl.x-2)*pct),3);
 return;
 }
 
-// Draw iso box with team colors
-drawIsoBox(sx,sy,tw,th,bh,p.mid,p.dark,p.base);
-
-// Building-specific top details
-ctx.save();
 switch(b.type){
 case 'ConYard':{
-// Antenna
-const ap=isoProject((b.tx+tw/2)*TILE,(b.ty+th/3)*TILE);
-ctx.strokeStyle='#888';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(ap.x,ap.y);ctx.lineTo(ap.x,ap.y-bh-20);ctx.stroke();
-ctx.fillStyle='#f00';ctx.beginPath();ctx.arc(ap.x,ap.y-bh-20,4,0,Math.PI*2);ctx.fill();
-break;}
-case 'Power':{
-// Lightning bolt icon on top face
-const pp=isoProject((b.tx+tw/2)*TILE,(b.ty+th/2)*TILE);
-ctx.fillStyle='#ffee00';ctx.font='bold 16px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
-ctx.fillText('⚡',pp.x,pp.y-bh/2);
-break;}
-case 'Radar':{
-// Dish on top
-const rp=isoProject((b.tx+tw/2)*TILE,(b.ty+th/2)*TILE);
-ctx.strokeStyle=p.acc;ctx.lineWidth=2;
-ctx.beginPath();ctx.arc(rp.x,rp.y-bh-4,10,Math.PI,0);ctx.stroke();
-ctx.beginPath();ctx.moveTo(rp.x,rp.y-bh);ctx.lineTo(rp.x,rp.y-bh-14);ctx.stroke();
-break;}
-case 'Turret':{
-// Barrel pointing forward
-const tp2=isoProject((b.tx+0.5)*TILE,(b.ty+0.5)*TILE);
-ctx.strokeStyle=p.steel;ctx.lineWidth=4;
-ctx.beginPath();ctx.moveTo(tp2.x,tp2.y-bh+4);ctx.lineTo(tp2.x+14,tp2.y-bh+12);ctx.stroke();
-break;}
-case 'Barracks':{
-const bp=isoProject((b.tx+tw/2)*TILE,(b.ty+th/2)*TILE);
-ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='12px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
-ctx.fillText('★',bp.x,bp.y-bh/2);
-break;}
-default:break;
+// Grey concrete industrial complex
+drawIsoBox(bsx,bsy,tw,th,bh,'#505048','#2a2a28','#383830');
+// Team colour band at top of walls
+drawFaceRect(fl,fb,fbb,flb,0,0,1,.08,p.stripe);
+drawFaceRect(fb,fr,frb,fbb,0,0,1,.08,p.stripe);
+// SW: two windows
+for(let i=0;i<2;i++){
+drawFaceRect(fl,fb,fbb,flb,.12+i*.38,.28,.12+i*.38+.22,.58,'#0d1820');
+drawFaceRect(fl,fb,fbb,flb,.13+i*.38,.29,.13+i*.38+.2,.56,p.glass);
 }
-ctx.restore();
+// SE: large factory bay door
+drawFaceRect(fb,fr,frb,fbb,.18,.18,.82,1,'#0d0d0d');
+drawFaceRect(fb,fr,frb,fbb,.17,.17,.19,1,p.steel);
+drawFaceRect(fb,fr,frb,fbb,.81,.17,.83,1,p.steel);
+// Antenna
+const ap=isoProject((b.tx+tw*.5)*TILE,(b.ty+th*.3)*TILE);
+ctx.strokeStyle=p.steel;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(ap.x,ap.y-bh);ctx.lineTo(ap.x,ap.y-bh-28);ctx.stroke();
+ctx.fillStyle='#ff2200';ctx.beginPath();ctx.arc(ap.x,ap.y-bh-28,4,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='rgba(255,50,0,0.3)';ctx.beginPath();ctx.arc(ap.x,ap.y-bh-28,7,0,Math.PI*2);ctx.fill();
+break;}
+
+case 'Power':{
+// Dark with glowing yellow-green vents
+drawIsoBox(bsx,bsy,tw,th,bh,'#1a2810','#0e1a08','#142010');
+// Glowing vent stripes on SE face
+for(let i=0;i<4;i++){const vv=.15+i*.18;
+drawFaceRect(fb,fr,frb,fbb,0,vv,1,vv+.08,'#886600');
+drawFaceRect(fb,fr,frb,fbb,.05,vv+.01,.95,vv+.06,'#ffee44');
+}
+// SW cooling pipes
+for(let i=0;i<3;i++){drawFaceRect(fl,fb,fbb,flb,.08+i*.3,.12,.08+i*.3+.14,.88,'#334422');}
+// Top: glowing reactor core
+const pp=isoProject((b.tx+tw/2)*TILE,(b.ty+th/2)*TILE);
+drawFaceRect(ft,fr,fb,fl,.25,.25,.75,.75,'#2a4a10');
+const coreG=ctx.createRadialGradient(pp.x,pp.y-bh*.6,2,pp.x,pp.y-bh*.6,18);
+coreG.addColorStop(0,'rgba(180,255,80,0.95)');coreG.addColorStop(1,'rgba(80,200,0,0)');
+ctx.fillStyle=coreG;ctx.beginPath();ctx.arc(pp.x,pp.y-bh*.6,18,0,Math.PI*2);ctx.fill();
+break;}
+
+case 'Refinery':{
+// Earthy tan industrial ore processor
+drawIsoBox(bsx,bsy,tw,th,bh,'#3a3020','#28201a','#302818');
+drawFaceRect(fl,fb,fbb,flb,0,0,1,.07,p.stripe);
+drawFaceRect(fb,fr,frb,fbb,0,0,1,.07,p.stripe);
+// SE: ore dump opening (lower half)
+drawFaceRect(fb,fr,frb,fbb,.1,.42,.9,1,'#0d0d0d');
+drawFaceRect(fb,fr,frb,fbb,.12,.44,.88,.99,'#1a1000');
+drawFaceRect(fb,fr,frb,fbb,.28,.6,.72,.97,'#a06010'); // ore glow
+// SW: machinery tanks
+drawFaceRect(fl,fb,fbb,flb,.05,.28,.2,.78,'#444030');
+drawFaceRect(fl,fb,fbb,flb,.72,.28,.87,.78,'#444030');
+// Top: processing dome
+const rfp=isoProject((b.tx+tw*.5)*TILE,(b.ty+th*.4)*TILE);
+ctx.fillStyle='#704a28';ctx.beginPath();ctx.arc(rfp.x,rfp.y-bh,12,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='#a08060';ctx.beginPath();ctx.arc(rfp.x,rfp.y-bh,7,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='rgba(200,140,0,0.45)';ctx.beginPath();ctx.arc(rfp.x,rfp.y-bh,11,0,Math.PI*2);ctx.fill();
+break;}
+
+case 'Barracks':{
+// Military building with team colours
+drawIsoBox(bsx,bsy,tw,th,bh,p.dark,p.dark,p.mid);
+drawFaceRect(fl,fb,fbb,flb,0,0,1,.09,p.stripe);
+drawFaceRect(fb,fr,frb,fbb,0,0,1,.09,p.stripe);
+// SW: barred windows
+for(let i=0;i<2;i++){
+drawFaceRect(fl,fb,fbb,flb,.08+i*.42,.28,.08+i*.42+.28,.62,'#0d0d0d');
+drawFaceRect(fl,fb,fbb,flb,.09+i*.42,.29,.09+i*.42+.26,.6,p.glass);
+}
+// SE: double door
+drawFaceRect(fb,fr,frb,fbb,.16,.33,.46,1,'#0d0d0d');
+drawFaceRect(fb,fr,frb,fbb,.54,.33,.84,1,'#0d0d0d');
+drawFaceRect(fb,fr,frb,fbb,.17,.34,.45,.99,'#181818');
+drawFaceRect(fb,fr,frb,fbb,.55,.34,.83,.99,'#181818');
+// Top: star emblem
+const bp=isoProject((b.tx+tw/2)*TILE,(b.ty+th/2)*TILE);
+ctx.fillStyle=p.acc;ctx.font='bold 18px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('★',bp.x,bp.y-bh*.55);
+break;}
+
+case 'WarFac':{
+// Heavy industrial steel factory
+drawIsoBox(bsx,bsy,tw,th,bh,'#2a2828','#181818','#222020');
+drawFaceRect(fl,fb,fbb,flb,0,0,1,.07,p.stripe);
+drawFaceRect(fb,fr,frb,fbb,0,0,1,.07,p.stripe);
+// SE: giant garage door
+drawFaceRect(fb,fr,frb,fbb,.05,.14,.95,1,'#0a0a0a');
+drawFaceRect(fb,fr,frb,fbb,.04,.13,.06,1,p.steel);
+drawFaceRect(fb,fr,frb,fbb,.94,.13,.96,1,p.steel);
+for(let s=0;s<5;s++){const sv=.15+s*.17;
+drawFaceRect(fb,fr,frb,fbb,.07,sv,.93,sv+.14,'#141414');
+drawFaceRect(fb,fr,frb,fbb,.07,sv,.93,sv+.025,'#2a2a2a');
+}
+// SW: industrial windows
+for(let i=0;i<2;i++){
+drawFaceRect(fl,fb,fbb,flb,.07+i*.46,.18,.07+i*.46+.34,.52,'#0d0d0d');
+drawFaceRect(fl,fb,fbb,flb,.08+i*.46,.19,.08+i*.46+.32,.5,p.glass);
+}
+break;}
+
+case 'Turret':{
+// Small team-coloured bunker with gun barrel
+drawIsoBox(bsx,bsy,tw,th,bh,p.mid,p.dark,p.base);
+const tp2=isoProject((b.tx+.5)*TILE,(b.ty+.5)*TILE);
+// Dome
+ctx.fillStyle=p.dark;ctx.beginPath();ctx.arc(tp2.x,tp2.y-bh,11,0,Math.PI*2);ctx.fill();
+ctx.fillStyle=p.base;ctx.beginPath();ctx.arc(tp2.x,tp2.y-bh,8,0,Math.PI*2);ctx.fill();
+ctx.fillStyle=p.lite;ctx.beginPath();ctx.arc(tp2.x-2,tp2.y-bh-2,3,0,Math.PI*2);ctx.fill();
+// Barrel pointing SE
+ctx.strokeStyle=p.dark;ctx.lineWidth=5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(tp2.x,tp2.y-bh);ctx.lineTo(tp2.x+18,tp2.y-bh+9);ctx.stroke();
+ctx.strokeStyle=p.steel;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(tp2.x,tp2.y-bh);ctx.lineTo(tp2.x+18,tp2.y-bh+9);ctx.stroke();
+break;}
+
+case 'Radar':{
+// Dark tech building with dish
+drawIsoBox(bsx,bsy,tw,th,bh,'#1a1a2a','#101018','#181820');
+drawFaceRect(fl,fb,fbb,flb,0,0,1,.07,p.stripe);
+drawFaceRect(fb,fr,frb,fbb,0,0,1,.07,p.stripe);
+// SE: tech panels with horizontal lines
+drawFaceRect(fb,fr,frb,fbb,.1,.2,.9,.72,'#141420');
+for(let i=0;i<4;i++){drawFaceRect(fb,fr,frb,fbb,.12,.22+i*.12,.88,.22+i*.12+.04,p.stripe);}
+// SW: scanner screen
+drawFaceRect(fl,fb,fbb,flb,.22,.28,.78,.72,'#0d0d0d');
+drawFaceRect(fl,fb,fbb,flb,.24,.29,.76,.7,'rgba(0,100,200,0.55)');
+// Rotating sweep line
+const spin=(G.time*1.5)%(Math.PI*2);
+const sc=facePoint(fl,fb,fbb,flb,.5,.5);
+ctx.strokeStyle='rgba(0,200,255,0.6)';ctx.lineWidth=1;
+ctx.beginPath();ctx.moveTo(sc.x,sc.y);ctx.lineTo(sc.x+Math.cos(spin)*12,sc.y+Math.sin(spin)*6);ctx.stroke();
+// Dish on top
+const rp2=isoProject((b.tx+tw/2)*TILE,(b.ty+th/2)*TILE);
+ctx.strokeStyle=p.acc;ctx.lineWidth=2;
+ctx.beginPath();ctx.arc(rp2.x,rp2.y-bh-2,13,Math.PI+.25,-.25);ctx.stroke();
+ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(rp2.x,rp2.y-bh+2);ctx.lineTo(rp2.x,rp2.y-bh-16);ctx.stroke();
+ctx.fillStyle=p.acc;ctx.beginPath();ctx.arc(rp2.x,rp2.y-bh-2,3,0,Math.PI*2);ctx.fill();
+const spin2=(G.time*2)%(Math.PI*2);
+ctx.strokeStyle='rgba(100,200,255,0.55)';ctx.lineWidth=1.5;
+ctx.beginPath();ctx.moveTo(rp2.x,rp2.y-bh-2);ctx.lineTo(rp2.x+Math.cos(spin2)*13,rp2.y-bh-2+Math.sin(spin2)*6);ctx.stroke();
+break;}
+
+case 'RepairBay':{
+// Concrete garage with large doors and green cross
+drawIsoBox(bsx,bsy,tw,th,bh,'#404038','#2a2a28','#353530');
+drawFaceRect(fl,fb,fbb,flb,0,0,1,.07,p.stripe);
+drawFaceRect(fb,fr,frb,fbb,0,0,1,.07,p.stripe);
+// SE: repair bay door
+drawFaceRect(fb,fr,frb,fbb,.08,.18,.92,1,'#0d0d0d');
+drawFaceRect(fb,fr,frb,fbb,.07,.17,.09,1,'#505048');
+drawFaceRect(fb,fr,frb,fbb,.91,.17,.93,1,'#505048');
+for(let s=0;s<5;s++){const sv=.19+s*.16;
+drawFaceRect(fb,fr,frb,fbb,.09,sv,.91,sv+.14,'#151515');
+drawFaceRect(fb,fr,frb,fbb,.09,sv,.91,sv+.025,'#2a2a2a');
+}
+// Green cross above door
+const cp=facePoint(fb,fr,frb,fbb,.5,.09);const arm=5;
+ctx.fillStyle='#00cc44';ctx.fillRect(cp.x-arm*.4,cp.y-arm,arm*.8,arm*2);
+ctx.fillRect(cp.x-arm,cp.y-arm*.4,arm*2,arm*.8);
+// SW: side windows
+for(let i=0;i<2;i++){
+drawFaceRect(fl,fb,fbb,flb,.08+i*.44,.22,.08+i*.44+.3,.66,'#0d0d0d');
+drawFaceRect(fl,fb,fbb,flb,.09+i*.44,.23,.09+i*.44+.28,.64,p.glass);
+}
+// Repair sparks animation
+if((G.tick%8)<4){ctx.fillStyle='rgba(255,200,0,0.85)';ctx.beginPath();ctx.arc(cp.x+(Math.random()-.5)*10,cp.y+(Math.random()-.5)*5,1.5,0,Math.PI*2);ctx.fill();}
+break;}
+
+default:
+drawIsoBox(bsx,bsy,tw,th,bh,p.mid,p.dark,p.base);
+break;}
 
 // HP bar
 if(b.hp<b.maxHp){
-const f=isoFootprint(sx,sy,tw,th);
-const barW=f.right.x-f.left.x;
-hpBar(f.left.x,f.bot.y+bh+2,barW,b.hp,b.maxHp);
-}
+const barW=fr.x-fl.x;hpBar(fl.x,fbb.y+2,barW,b.hp,b.maxHp);}
 // Build queue progress
 if(b.bq&&b.bq.length>0){
 const item=b.bq[0],pct=item.prog/item.bt;
-const f=isoFootprint(sx,sy,tw,th);
-const barW=f.right.x-f.left.x;
-ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(f.left.x,f.bot.y+bh+8,barW,5);
-ctx.fillStyle='#00ee44';ctx.fillRect(f.left.x+1,f.bot.y+bh+9,Math.max(0,(barW-2)*pct),3);
+const barW=fr.x-fl.x;
+ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(fl.x,fbb.y+8,barW,5);
+ctx.fillStyle='#00ee44';ctx.fillRect(fl.x+1,fbb.y+9,Math.max(0,(barW-2)*pct),3);
 }
 // Selection highlight
-if(G.selected.includes(b)){
-const f=isoFootprint(sx,sy,tw,th);
-ctx.strokeStyle='#00ff55';ctx.lineWidth=2;ctx.setLineDash([4,4]);
-ctx.beginPath();ctx.moveTo(f.top.x,f.top.y);ctx.lineTo(f.right.x,f.right.y);ctx.lineTo(f.bot.x,f.bot.y);ctx.lineTo(f.left.x,f.left.y);ctx.closePath();ctx.stroke();
-ctx.setLineDash([]);
-}
+if(G.selected.includes(b)){ctx.strokeStyle='#00ff55';ctx.lineWidth=2;ctx.setLineDash([4,4]);
+ctx.beginPath();ctx.moveTo(ft.x,ft.y);ctx.lineTo(fr.x,fr.y);ctx.lineTo(fb.x,fb.y);ctx.lineTo(fl.x,fl.y);ctx.closePath();ctx.stroke();ctx.setLineDash([]);}
 }
 
 // ══════════════════════════════════════════════════════════════
