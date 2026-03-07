@@ -1059,11 +1059,13 @@ function d2p(a,b){return(a.x-b.x)**2+(a.y-b.y)**2;}
 // ─── AI ───────────────────────────────────────────────
 // ─── AI DIFFICULTY CONFIGS ────────────────────────────
 const AI_CFG={
-  //                                                                                                                              minT=early turret goal before WarFac, garrison=units kept at home
-  easy:   {tMin:6,  tMax:10, atkMin:9, bkMax:1, wfMax:1, wfMax2:1, riflePct:0.7, tankPct:0.45, minTurrets:1, maxTurrets:3,  maxPower:2, maxWF:1, repairHp:0.35, defRange:5,  creditBonus:0,    atkReroute:0.05, garrison:0},
-  medium: {tMin:3,  tMax:5,  atkMin:6, bkMax:3, wfMax:2, wfMax2:2, riflePct:0.4, tankPct:0.7,  minTurrets:2, maxTurrets:5,  maxPower:4, maxWF:1, repairHp:0.7,  defRange:8,  creditBonus:0,    atkReroute:0.15, garrison:1},
-  hard:   {tMin:1.5,tMax:3,  atkMin:4, bkMax:4, wfMax:3, wfMax2:3, riflePct:0.1, tankPct:0.82, minTurrets:3, maxTurrets:8,  maxPower:6, maxWF:2, repairHp:0.82, defRange:12, creditBonus:500,  atkReroute:0.3,  garrison:2},
-  amazing:{tMin:0.6,tMax:1.2,atkMin:3, bkMax:6, wfMax:4, wfMax2:5, riflePct:0.0, tankPct:0.88, minTurrets:4, maxTurrets:12, maxPower:8, maxWF:2, repairHp:0.92, defRange:18, creditBonus:1200, atkReroute:0.45, garrison:3},
+  // tMin/tMax=AI tick interval(s), atkMin=unit threshold to launch wave, bkMax/wfMax=queue depth
+  // maxRef=max refineries, maxHarv=max harvesters, splitGroups=attack wave groups
+  // waveInterval=seconds between timed waves, defConYardHp=go defensive below this HP ratio
+  easy:   {tMin:6,  tMax:10, atkMin:9, bkMax:1, wfMax:1, wfMax2:1, riflePct:0.7, tankPct:0.45, minTurrets:1, maxTurrets:3,  maxPower:2, maxWF:1, maxRef:1, maxHarv:1, repairHp:0.35, defRange:5,  creditBonus:0,    atkReroute:0.05, garrison:0, splitGroups:1, waveInterval:999, defConYardHp:0},
+  medium: {tMin:3,  tMax:5,  atkMin:5, bkMax:3, wfMax:2, wfMax2:2, riflePct:0.4, tankPct:0.7,  minTurrets:2, maxTurrets:5,  maxPower:4, maxWF:1, maxRef:2, maxHarv:2, repairHp:0.7,  defRange:8,  creditBonus:0,    atkReroute:0.2,  garrison:2, splitGroups:1, waveInterval:55,  defConYardHp:0.4},
+  hard:   {tMin:1.5,tMax:3,  atkMin:4, bkMax:4, wfMax:3, wfMax2:3, riflePct:0.1, tankPct:0.82, minTurrets:3, maxTurrets:8,  maxPower:6, maxWF:2, maxRef:3, maxHarv:3, repairHp:0.82, defRange:12, creditBonus:300,  atkReroute:0.35, garrison:3, splitGroups:2, waveInterval:40,  defConYardHp:0.35},
+  amazing:{tMin:0.6,tMax:1.2,atkMin:3, bkMax:6, wfMax:4, wfMax2:5, riflePct:0.0, tankPct:0.88, minTurrets:4, maxTurrets:12, maxPower:8, maxWF:2, maxRef:3, maxHarv:4, repairHp:0.92, defRange:18, creditBonus:900,  atkReroute:0.5,  garrison:4, splitGroups:3, waveInterval:25,  defConYardHp:0.3},
 };
 
 function runAI(aiTeam){
@@ -1071,7 +1073,7 @@ if(aiTeam===undefined)aiTeam=TE;
 const aiSlot=G.aiSlots&&G.aiSlots.find(s=>s.team===aiTeam);
 const diff=aiSlot?aiSlot.diff:(MP.aiDiff||'medium');
 const cfg=AI_CFG[diff];
-// Amazing AI gets a passive credit bonus each run to simulate better economy
+// Passive credit bonus to simulate better economy management on hard/amazing
 if(cfg.creditBonus>0)G.credits[aiTeam]+=cfg.creditBonus*(cfg.tMin+cfg.tMax)/2*0.04;
 
 const cr=G.credits[aiTeam];
@@ -1079,86 +1081,125 @@ const bs=G.entities.filter(e=>e.isBuilding&&e.team===aiTeam&&e.complete);
 const us=G.entities.filter(e=>e.isUnit&&e.team===aiTeam);
 const has=t=>bs.some(b=>b.type===t);
 const cony=bs.find(b=>b.type==='ConYard');
-const enemyTeam=myEnemyOf(aiTeam);
+const refCount=bs.filter(b=>b.type==='Refinery').length;
+const harvCount=us.filter(u=>u.type==='Harvester').length;
 
-// Build priority order
+// Defensive mode: ConYard critically damaged — stop attacking, rush defenses
+const conyHpRatio=cony?cony.hp/cony.maxHp:1;
+const defensive=cfg.defConYardHp>0&&cony&&conyHpRatio<cfg.defConYardHp;
+
+// ── BUILD PRIORITY ──────────────────────────────────────────────────────
 if(cony){
 const powerCount=bs.filter(b=>b.type==='Power').length;
 const turretCount=bs.filter(b=>b.type==='Turret').length;
 const wfCount=bs.filter(b=>b.type==='WarFac').length;
-const refCount=bs.filter(b=>b.type==='Refinery').length;
-// Core infra first
+if(defensive){
+// Emergency: spam turrets and power to hold the line
+if(cr>=600)aiBldNear('Turret',cony,bs,aiTeam);
+else if(cr>=300)aiBld('Power',cony,aiTeam);
+} else {
 if(powerCount<2&&cr>=300)aiBld('Power',cony,aiTeam);
 else if(!has('Refinery')&&cr>=2000)aiBld('Refinery',cony,aiTeam);
 else if(!has('Barracks')&&cr>=500)aiBld('Barracks',cony,aiTeam);
-// Early defense turrets before committing to offense
 else if(turretCount<cfg.minTurrets&&cr>=600)aiBldNear('Turret',cony,bs,aiTeam);
 else if(!has('WarFac')&&cr>=2000)aiBld('WarFac',cony,aiTeam);
 else if(!has('Radar')&&cr>=1000)aiBld('Radar',cony,aiTeam);
-// Keep building more turrets as economy grows
+// Expand economy: more refineries up to maxRef
+else if(refCount<cfg.maxRef&&cr>=2000)aiBld('Refinery',cony,aiTeam);
 else if(turretCount<cfg.maxTurrets&&cr>=600)aiBldNear('Turret',cony,bs,aiTeam);
 else if(powerCount<cfg.maxPower&&cr>=300)aiBld('Power',cony,aiTeam);
-// Hard/Amazing: second WarFac and second Refinery for double production
 else if(wfCount<cfg.maxWF&&cr>=2000)aiBld('WarFac',cony,aiTeam);
-else if(refCount<2&&cfg.maxWF>1&&cr>=2000)aiBld('Refinery',cony,aiTeam);
+}
 }
 
-// Train units
+// ── TRAIN UNITS ─────────────────────────────────────────────────────────
 const bks=bs.filter(b=>b.type==='Barracks');
 const wfs=bs.filter(b=>b.type==='WarFac');
 const hasRadar=has('Radar');
-
+// Target 1 harvester per refinery + 1, up to maxHarv
+const targetHarv=Math.min(cfg.maxHarv, refCount+1);
 for(const bk of bks){
 if(!bk.bq||bk.bq.length<cfg.bkMax){
-if(hasRadar&&cr>=1000&&!us.some(u=>u.type==='Repairman'))aiQ(bk,'Repairman',aiTeam);
+if(hasRadar&&!us.some(u=>u.type==='Repairman'))aiQ(bk,'Repairman',aiTeam);
 else if(cr>=300)aiQ(bk,Math.random()<cfg.riflePct?'Rifleman':'GI',aiTeam);
 }}
 for(const wf of wfs){
 const wfLimit=wfs.indexOf(wf)===0?cfg.wfMax:cfg.wfMax2;
 if(!wf.bq||wf.bq.length<wfLimit){
-if(!us.some(u=>u.type==='Harvester'))aiQ(wf,'Harvester',aiTeam);
+if(harvCount<targetHarv)aiQ(wf,'Harvester',aiTeam);
 else if(cr>=700)aiQ(wf,Math.random()<cfg.tankPct?'Tank':'IFV',aiTeam);
 }}
 
-// Repair damaged buildings
+// ── REPAIR ──────────────────────────────────────────────────────────────
 us.filter(u=>u.type==='Repairman'&&u.state==='idle').forEach(rm=>{
 const dmgBldg=bs.find(b=>b.hp<b.maxHp*cfg.repairHp);
 if(dmgBldg){rm.repairTarget=dmgBldg;rm.state='repair';rm.path=fp(rm.x,rm.y,dmgBldg.x,dmgBldg.y);}
 });
 
-// Attack: send forces in waves once threshold is met, keep garrison at home
+// ── COMBAT ──────────────────────────────────────────────────────────────
+const enemyEnts=G.entities.filter(e=>isEnemy(aiTeam,e.team)&&e.hp>0);
+const enemyBldgs=enemyEnts.filter(e=>e.isBuilding);
 const fighters=us.filter(u=>u.dmg>0&&u.type!=='Harvester');
-// Sort by proximity to enemy base so vanguard leads
-const enemyBldgs=G.entities.filter(e=>isEnemy(aiTeam,e.team)&&e.hp>0&&e.isBuilding);
+// Sort closest-to-enemy first; garrison = last N (closest to home base)
 const enemyRef=enemyBldgs[0]||{x:MAP_W*TILE/2,y:MAP_H*TILE/2};
 fighters.sort((a,b2)=>d2p(a,enemyRef)-d2p(b2,enemyRef));
-// Keep garrison units near ConYard
 const garrisonCount=Math.min(cfg.garrison,fighters.length);
-const garrisonUnits=fighters.slice(0,garrisonCount);
-const attackers=fighters.slice(garrisonCount);
-if(attackers.length>=cfg.atkMin){
-// Hard/Amazing: target harvester to cripple economy; others: target nearest
+const attackers=fighters.slice(0,fighters.length-garrisonCount);
+const garrisonUnits=fighters.slice(fighters.length-garrisonCount);
+
+// Timed wave: attack when threshold met OR enough time has passed
+if(aiSlot&&!aiSlot.lastWave)aiSlot.lastWave=G.time;
+const timeSinceWave=G.time-((aiSlot&&aiSlot.lastWave)||0);
+const launchWave=!defensive&&enemyBldgs.length>0&&
+  (attackers.length>=cfg.atkMin||(timeSinceWave>cfg.waveInterval&&attackers.length>0));
+
+if(launchWave){
+if(aiSlot)aiSlot.lastWave=G.time;
+const turrets=enemyBldgs.filter(e=>e.type==='Turret');
+const conyards=enemyBldgs.filter(e=>e.type==='ConYard');
+// Split into groups, each hitting a different target
+const numGroups=Math.min(cfg.splitGroups,attackers.length);
+const groupSize=Math.ceil(attackers.length/numGroups);
+for(let g=0;g<numGroups;g++){
+const group=attackers.slice(g*groupSize,(g+1)*groupSize);
+if(!group.length)continue;
+const lead=group[0];
 let target;
-if(cfg.atkMin<=4){
-target=G.entities.find(e=>isEnemy(aiTeam,e.team)&&e.hp>0&&e.type==='Harvester')
-||G.entities.filter(e=>isEnemy(aiTeam,e.team)&&e.hp>0&&e.isBuilding).sort((a,b2)=>d2p(attackers[0],a)-d2p(attackers[0],b2))[0]
-||G.entities.filter(e=>isEnemy(aiTeam,e.team)&&e.hp>0).sort((a,b2)=>d2p(attackers[0],a)-d2p(attackers[0],b2))[0];
+if(g===0){
+// Main group: clear turrets first, then ConYard
+target=turrets.sort((a,b2)=>d2p(lead,a)-d2p(lead,b2))[0]
+||conyards.sort((a,b2)=>d2p(lead,a)-d2p(lead,b2))[0]
+||enemyBldgs.sort((a,b2)=>d2p(lead,a)-d2p(lead,b2))[0];
+} else if(g===1){
+// Flanking group: strike ConYard directly
+target=conyards.sort((a,b2)=>d2p(lead,a)-d2p(lead,b2))[0]
+||enemyBldgs.sort((a,b2)=>d2p(lead,a)-d2p(lead,b2))[0];
 } else {
-target=G.entities.filter(e=>isEnemy(aiTeam,e.team)&&e.hp>0).sort((a,b2)=>d2p(attackers[0],a)-d2p(attackers[0],b2))[0];
+// Third group: economic harassment — hunt Harvesters
+target=enemyEnts.find(e=>e.type==='Harvester')
+||enemyBldgs.sort((a,b2)=>d2p(lead,a)-d2p(lead,b2))[0];
 }
-if(target)attackers.forEach(f=>{
-if(f.state==='idle'||(f.state!=='attack'&&Math.random()<cfg.atkReroute)){
+if(target){
+group.forEach(f=>{
+if(f.state==='idle'||Math.random()<cfg.atkReroute){
 f.target=target;f.state='attack';f.path=fp(f.x,f.y,target.x,target.y);
+}});
 }
-});
 }
-// Garrison: idle units stay near ConYard
-if(cony)garrisonUnits.filter(u=>u.state==='idle').forEach(u=>{
-const gx=cony.x+(Math.random()-.5)*TILE*4,gy=cony.y+(Math.random()-.5)*TILE*4;
-u.path=fp(u.x,u.y,gx,gy);
+}
+
+// Garrison: intercept nearby threats; otherwise patrol near ConYard
+if(cony)garrisonUnits.forEach(u=>{
+if(u.state==='attack')return;
+const nearby=findEnemy(u.x,u.y,TILE*cfg.defRange,aiTeam);
+if(nearby){u.target=nearby;u.state='attack';u.path=fp(u.x,u.y,nearby.x,nearby.y);}
+else if(u.state==='idle'){
+const gx=cony.x+(Math.random()-.5)*TILE*3,gy=cony.y+(Math.random()-.5)*TILE*3;
+u.state='move';u.path=fp(u.x,u.y,gx,gy);
+}
 });
 
-// Defend: react to nearby enemies
+// All idle fighters react to nearby enemies
 us.filter(u=>u.state==='idle'&&u.dmg>0).forEach(u=>{
 const nearby=findEnemy(u.x,u.y,TILE*cfg.defRange,aiTeam);
 if(nearby){u.target=nearby;u.state='attack';u.path=fp(u.x,u.y,nearby.x,nearby.y);}
