@@ -836,6 +836,7 @@ G.aiSlots=(MP.aiSlots||[]).map(s=>Object.assign({},s));
 for(let t=0;t<np;t++){const c=SPAWN_CORNERS[t];spawnBase(t,c.bx,c.by);}
 upPow();
 buildTerrainCache();
+rebuildPassMap();
 }
 
 // mkBldg: buildings can optionally be placed as "under construction"
@@ -878,6 +879,16 @@ G.power=[0,0,0,0];G.pu=[0,0,0,0];
 for(const e of G.entities){if(!e.isBuilding||!e.complete)continue;G.power[e.team]+=BD[e.type].power;G.pu[e.team]+=BD[e.type].pu;}
 }
 
+// ─── PASSABILITY MAP ──────────────────────────────────
+// Precomputed Uint8Array so pass() is O(1) instead of O(entities)
+let passMap=null;
+function rebuildPassMap(){
+if(!G.map)return;
+if(!passMap)passMap=new Uint8Array(MAP_W*MAP_H);
+for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++){const t=G.map[y][x].type;passMap[y*MAP_W+x]=(t===T_DEEP||t===T_SHALLOW||t===T_ROCK)?0:1;}
+for(const e of G.entities){if(!e.isBuilding||!e.complete||e.hp<=0)continue;const d=BD[e.type];for(let dy=0;dy<d.h;dy++)for(let dx=0;dx<d.w;dx++){const nx=e.tx+dx,ny=e.ty+dy;if(ny>=0&&ny<MAP_H&&nx>=0&&nx<MAP_W)passMap[ny*MAP_W+nx]=0;}}
+}
+
 // ─── PATHFINDING ──────────────────────────────────────
 function fp(sx,sy,ex,ey){
 const stx=~~(sx/TILE),sty=~~(sy/TILE),etx=~~(ex/TILE),ety=~~(ey/TILE);
@@ -901,12 +912,7 @@ open.push({x:nx,y:ny,g:c.g+(dx&&dy?1.4:1),h:heur(nx,ny,etx,ety),p:c});
 return[];
 }
 function heur(x1,y1,x2,y2){return Math.sqrt((x2-x1)**2+(y2-y1)**2);}
-function pass(tx,ty){
-const t=G.map[ty][tx].type;
-if(t===T_DEEP||t===T_SHALLOW||t===T_ROCK)return false;
-for(const e of G.entities){if(!e.isBuilding||!e.complete)continue;const d=BD[e.type];if(tx>=e.tx&&tx<e.tx+d.w&&ty>=e.ty&&ty<e.ty+d.h)return false;}
-return true;
-}
+function pass(tx,ty){return passMap?passMap[ty*MAP_W+tx]!==0:true;}
 // Returns a passable world-pixel point adjacent to building b (for pathfinding TO a building)
 function nearBldgPt(b){
 const d=BD[b.type],pts=[];
@@ -979,7 +985,7 @@ if(activeBuildId[e.team]===e.id){
 e.constructProg+=dt/e.constructTime*buildRate(e.team,e.type);
 if(e.constructProg>=1){
 e.constructProg=1; e.complete=true; e.hp=e.maxHp;
-upPow();
+upPow(); rebuildPassMap();
 if(e.team===MP.myTeam){showMsg(`${BD[e.type].name} construction complete!`);playSound('build');}
 // Refinery comes with a free Harvester
 if(e.type==='Refinery'){
@@ -1036,7 +1042,7 @@ spawnEx(dead.x,dead.y,dead.isBuilding?3:1);
 G.selected=G.selected.filter(s=>s!==dead);
 // Redraw terrain if ore tile changed
 terrainCacheDirty=true; mmTerrainDirty=true;
-G.entities.splice(i,1); upPow();
+G.entities.splice(i,1); upPow(); if(dead.isBuilding)rebuildPassMap();
 }
 }
 if(G.tick%90===0)checkVic();
@@ -1506,22 +1512,15 @@ ctx.fillStyle=projColorsDim[p.team]||'rgba(255,255,255,0.25)';
 ctx.beginPath(); ctx.arc(ptx,pty,2,0,Math.PI*2); ctx.fill();
 }
 
-// Fog overlay — batch all diamond tiles into two Path2D objects (explored / unseen)
+// Fog overlay — two batched fills instead of 4800 individual beginPath/fill calls
 if(G.fog){
 const hw=ISO_W/2,hh=ISO_H/2;
-const fogExp=new Path2D(),fogUnk=new Path2D();
-for(let sum=0;sum<MAP_W+MAP_H-1;sum++){
-for(let ftx=Math.max(0,sum-(MAP_H-1));ftx<=Math.min(sum,MAP_W-1);ftx++){
-const fty=sum-ftx;
-const f=G.fog[fty]?.[ftx]??0;
-if(f===2)continue;
-const{x:fsx,y:fsy}=isoProject(ftx*TILE,fty*TILE);
-const p=f===1?fogExp:fogUnk;
-p.moveTo(fsx,fsy-hh);p.lineTo(fsx+hw,fsy);p.lineTo(fsx,fsy+hh);p.lineTo(fsx-hw,fsy);p.closePath();
-}
-}
-ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fill(fogExp);
-ctx.fillStyle='rgba(0,0,0,0.88)';ctx.fill(fogUnk);
+ctx.beginPath();
+for(let sum=0;sum<MAP_W+MAP_H-1;sum++)for(let ftx=Math.max(0,sum-(MAP_H-1));ftx<=Math.min(sum,MAP_W-1);ftx++){const fty=sum-ftx;if((G.fog[fty]?.[ftx]??0)!==1)continue;const{x:fsx,y:fsy}=isoProject(ftx*TILE,fty*TILE);ctx.moveTo(fsx,fsy-hh);ctx.lineTo(fsx+hw,fsy);ctx.lineTo(fsx,fsy+hh);ctx.lineTo(fsx-hw,fsy);ctx.closePath();}
+ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fill();
+ctx.beginPath();
+for(let sum=0;sum<MAP_W+MAP_H-1;sum++)for(let ftx=Math.max(0,sum-(MAP_H-1));ftx<=Math.min(sum,MAP_W-1);ftx++){const fty=sum-ftx;if((G.fog[fty]?.[ftx]??0)!==0)continue;const{x:fsx,y:fsy}=isoProject(ftx*TILE,fty*TILE);ctx.moveTo(fsx,fsy-hh);ctx.lineTo(fsx+hw,fsy);ctx.lineTo(fsx,fsy+hh);ctx.lineTo(fsx-hw,fsy);ctx.closePath();}
+ctx.fillStyle='rgba(0,0,0,0.88)';ctx.fill();
 }
 
 // Particles
@@ -3946,7 +3945,8 @@ if(msg.pr)G.projectiles=msg.pr.map(p=>({x:p.x,y:p.y,vx:p.vx,vy:p.vy,life:p.life,
 if(msg.rr)G.radarReveals=msg.rr;
 if(msg.rc)G.radarCooldown=msg.rc;
 G.selected=G.entities.filter(e=>selIds.has(e.id)&&e.hp>0);
-// Recompute fog for client
+// Recompute fog and pass map for client
+rebuildPassMap();
 updateFog();
 }
 
