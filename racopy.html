@@ -894,13 +894,30 @@ let passMap=null;
 let completedBldgs=[]; // cached for pushOutOfBldgs — rebuilt with passMap
 let allBldgTiles=null;  // Uint8Array: 1 if any building (complete or not) occupies tile
 let oreTiles=[];        // [{x,y}] of ore tiles — rebuilt at init, shrinks as ore depletes
+let passComp=null;      // Uint16Array: connected-component ID per tile (0=impassable)
 function rebuildPassMap(){
 if(!G.map)return;
 if(!passMap)passMap=new Uint8Array(MAP_W*MAP_H);
 if(!allBldgTiles)allBldgTiles=new Uint8Array(MAP_W*MAP_H);
+if(!passComp)passComp=new Uint16Array(MAP_W*MAP_H);
 for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++){const t=G.map[y][x].type;passMap[y*MAP_W+x]=(t===T_DEEP||t===T_SHALLOW||t===T_ROCK)?0:1;allBldgTiles[y*MAP_W+x]=0;}
 completedBldgs=[];
 for(const e of G.entities){if(!e.isBuilding||e.hp<=0)continue;const d=BD[e.type];for(let dy=0;dy<d.h;dy++)for(let dx=0;dx<d.w;dx++){const nx=e.tx+dx,ny=e.ty+dy;if(ny>=0&&ny<MAP_H&&nx>=0&&nx<MAP_W){allBldgTiles[ny*MAP_W+nx]=1;if(e.complete)passMap[ny*MAP_W+nx]=0;}}if(e.complete)completedBldgs.push(e);}
+// BFS flood-fill connected components on passable tiles (4-dir; diagonal A* with corner-cutting is a subgraph)
+passComp.fill(0);
+let comp=0;
+const bfsQ=new Int32Array(MAP_W*MAP_H);
+for(let sy=0;sy<MAP_H;sy++)for(let sx=0;sx<MAP_W;sx++){
+  const si=sy*MAP_W+sx;if(!passMap[si]||passComp[si])continue;
+  comp++;passComp[si]=comp;
+  let head=0,tail=0;bfsQ[tail++]=si;
+  while(head<tail){const idx=bfsQ[head++];const tx=idx%MAP_W,ty=~~(idx/MAP_W);
+    if(tx>0){const n=idx-1;if(passMap[n]&&!passComp[n]){passComp[n]=comp;bfsQ[tail++]=n;}}
+    if(tx<MAP_W-1){const n=idx+1;if(passMap[n]&&!passComp[n]){passComp[n]=comp;bfsQ[tail++]=n;}}
+    if(ty>0){const n=idx-MAP_W;if(passMap[n]&&!passComp[n]){passComp[n]=comp;bfsQ[tail++]=n;}}
+    if(ty<MAP_H-1){const n=idx+MAP_W;if(passMap[n]&&!passComp[n]){passComp[n]=comp;bfsQ[tail++]=n;}}
+  }
+}
 }
 function buildOreTiles(){
 oreTiles=[];
@@ -916,6 +933,9 @@ function fp(sx,sy,ex,ey){
 _perfAstar++;
 const stx=~~(sx/TILE),sty=~~(sy/TILE),etx=~~(ex/TILE),ety=~~(ey/TILE);
 if(stx===etx&&sty===ety)return[];
+// O(1) connectivity check: skip full A* if tiles are in different passable regions
+if(passComp){const sc=passComp[sty*MAP_W+stx],ec=passComp[ety*MAP_W+etx];if(!sc||!ec||sc!==ec){_perfAstarFail++;return[];}}
+
 if(++_fpGen>60000){_fpClosed.fill(0);_fpGen=1;}
 const h0=heur(stx,sty,etx,ety);
 const open=[{x:stx,y:sty,g:0,h:h0,f:h0,p:null}];
@@ -1364,7 +1384,7 @@ target=enemyEnts.find(e=>e.type==='Harvester')
 }
 if(target){
 group.forEach(f=>{
-if(f.state==='idle'||(!f.path?.length&&Math.random()<cfg.atkReroute)){
+if(f.state==='idle'||(!f.path?.length&&!(f._prt>0)&&Math.random()<cfg.atkReroute)){
 f.target=target;f.state='attack';f.path=fp(f.x,f.y,target.x,target.y);
 }});
 }
