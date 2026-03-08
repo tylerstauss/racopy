@@ -89,9 +89,11 @@ See [`TOKEN_EFFICIENCY.md`](TOKEN_EFFICIENCY.md) for full guidelines. Key rules:
 
 ## Workflow
 - **Commit & push immediately** after each feature — no confirmation needed
+- **Never ask for permission** — complete all coding, make all calls, commit and push autonomously
+- After finishing a task, ask the user to test
 - Test by opening `racopy.html` directly in browser
 - Use browser DevTools console for debugging
-- Syntax check: `node --input-type=module -e "new Function(require('fs').readFileSync('racopy.html','utf8').match(/<script>([\s\S]*)<\/script>/)[1])"`
+- Syntax check: `node -e "new Function(require('fs').readFileSync('racopy.html','utf8').match(/<script>([\s\S]*)<\/script>/)[1])"`
 
 ## Recent features
 - 4-player multiplayer (FFA + 2v2), lobby with AI slots
