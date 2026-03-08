@@ -882,36 +882,48 @@ for(const e of G.entities){if(!e.isBuilding||!e.complete)continue;G.power[e.team
 // ─── PASSABILITY MAP ──────────────────────────────────
 // Precomputed Uint8Array so pass() is O(1) instead of O(entities)
 let passMap=null;
+let completedBldgs=[]; // cached for pushOutOfBldgs — rebuilt with passMap
 function rebuildPassMap(){
 if(!G.map)return;
 if(!passMap)passMap=new Uint8Array(MAP_W*MAP_H);
 for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++){const t=G.map[y][x].type;passMap[y*MAP_W+x]=(t===T_DEEP||t===T_SHALLOW||t===T_ROCK)?0:1;}
-for(const e of G.entities){if(!e.isBuilding||!e.complete||e.hp<=0)continue;const d=BD[e.type];for(let dy=0;dy<d.h;dy++)for(let dx=0;dx<d.w;dx++){const nx=e.tx+dx,ny=e.ty+dy;if(ny>=0&&ny<MAP_H&&nx>=0&&nx<MAP_W)passMap[ny*MAP_W+nx]=0;}}
+completedBldgs=[];
+for(const e of G.entities){if(!e.isBuilding||!e.complete||e.hp<=0)continue;completedBldgs.push(e);const d=BD[e.type];for(let dy=0;dy<d.h;dy++)for(let dx=0;dx<d.w;dx++){const nx=e.tx+dx,ny=e.ty+dy;if(ny>=0&&ny<MAP_H&&nx>=0&&nx<MAP_W)passMap[ny*MAP_W+nx]=0;}}
 }
 
 // ─── PATHFINDING ──────────────────────────────────────
+// Pre-allocated closed-set array — avoids string key GC and Set overhead
+const _fpClosed=new Uint16Array(MAP_W*MAP_H);
+let _fpGen=1;
 function fp(sx,sy,ex,ey){
 const stx=~~(sx/TILE),sty=~~(sy/TILE),etx=~~(ex/TILE),ety=~~(ey/TILE);
 if(stx===etx&&sty===ety)return[];
-const open=[{x:stx,y:sty,g:0,h:heur(stx,sty,etx,ety),p:null}];
-const closed=new Set(),key=(x,y)=>x+','+y;
+if(++_fpGen>60000){_fpClosed.fill(0);_fpGen=1;}
+const h0=heur(stx,sty,etx,ety);
+const open=[{x:stx,y:sty,g:0,h:h0,f:h0,p:null}];
 let it=0;
 while(open.length&&it++<3000){
-open.sort((a,b)=>(a.g+a.h)-(b.g+b.h));
-const c=open.shift(),k=key(c.x,c.y);
-if(closed.has(k))continue; closed.add(k);
+// Linear scan + swap-and-pop: O(N) but no sort overhead or array shifts
+let mi=0;for(let i=1;i<open.length;i++)if(open[i].f<open[mi].f)mi=i;
+const c=open[mi];open[mi]=open[open.length-1];open.pop();
+const ci=c.y*MAP_W+c.x;
+if(_fpClosed[ci]===_fpGen)continue;
+_fpClosed[ci]=_fpGen;
 if(c.x===etx&&c.y===ety){const path=[];let n=c;while(n){path.unshift({x:n.x*TILE+TILE/2,y:n.y*TILE+TILE/2});n=n.p;}return path;}
 for(const[dx,dy]of[[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1]]){
 const nx=c.x+dx,ny=c.y+dy;
-if(nx<0||nx>=MAP_W||ny<0||ny>=MAP_H||closed.has(key(nx,ny))||!pass(nx,ny))continue;
-// Prevent diagonal corner-cutting around water/rock
+if(nx<0||nx>=MAP_W||ny<0||ny>=MAP_H)continue;
+const ni=ny*MAP_W+nx;
+if(_fpClosed[ni]===_fpGen||!pass(nx,ny))continue;
 if(dx&&dy&&(!pass(c.x+dx,c.y)||!pass(c.x,c.y+dy)))continue;
-open.push({x:nx,y:ny,g:c.g+(dx&&dy?1.4:1),h:heur(nx,ny,etx,ety),p:c});
+const g=c.g+(dx&&dy?1.4:1),h=heur(nx,ny,etx,ety);
+open.push({x:nx,y:ny,g,h,f:g+h,p:c});
 }
 }
 return[];
 }
-function heur(x1,y1,x2,y2){return Math.sqrt((x2-x1)**2+(y2-y1)**2);}
+// Octile distance — admissible for 8-directional movement, no sqrt
+function heur(x1,y1,x2,y2){const dx=Math.abs(x2-x1),dy=Math.abs(y2-y1);return dx<dy?dy+dx*0.414:dx+dy*0.414;}
 function pass(tx,ty){return passMap?passMap[ty*MAP_W+tx]!==0:true;}
 // Returns a passable world-pixel point adjacent to building b (for pathfinding TO a building)
 function nearBldgPt(b){
@@ -1089,8 +1101,7 @@ if(t&&dist(u,t)<=u.rng){if(u.at<=0){dealDmg(t,u.dmg);spawnProj(u.x,u.y,t.x,t.y,u
 if(t&&u.state==='attack'&&dist(u,t)>u.rng&&(!u.path||!u.path.length))u.path=fp(u.x,u.y,t.x,t.y);
 }
 movePath(u);
-for(const o of G.entities){if(o===u||o.isBuilding||o.hp<=0)continue;const dx=u.x-o.x,dy=u.y-o.y,d2=dx*dx+dy*dy;if(d2<400&&d2>0){const d=Math.sqrt(d2);u.x+=dx/d*.5;u.y+=dy/d*.5;}}
-pushOutOfBldgs(u);
+for(const o of G.entities){if(o===u||o.isBuilding||o.hp<=0)continue;const dx=u.x-o.x,dy=u.y-o.y,d2=dx*dx+dy*dy;if(d2<400&&d2>0){const f=0.5/Math.sqrt(d2);u.x+=dx*f;u.y+=dy*f;}}
 }
 function updHarv(h,dt){
 if(h.state==='move'){
@@ -1167,8 +1178,8 @@ if(u._stk>45){u.path=[];u._stk=0;}
 }
 function pushOutOfBldgs(u){
 const R=10; // unit radius in world pixels
-for(const b of G.entities){
-if(!b.isBuilding||!b.complete||b.hp<=0)continue;
+for(const b of completedBldgs){
+if(b.hp<=0)continue;
 const d=BD[b.type];
 const bx=b.tx*TILE-R, by=b.ty*TILE-R;
 const bw=d.w*TILE+R*2, bh=d.h*TILE+R*2;
