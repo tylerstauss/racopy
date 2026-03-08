@@ -2112,7 +2112,7 @@ ctx.beginPath();ctx.moveTo(f.right.x,f.right.y);ctx.lineTo(f.right.x,f.right.y+b
 }
 
 // Building heights for iso rendering
-const BLD_H={ConYard:52,Power:60,Refinery:48,Barracks:40,WarFac:56,Turret:20,Radar:44,RepairBay:44};
+const BLD_H={ConYard:52,Power:60,Refinery:48,Barracks:40,WarFac:56,Turret:38,Radar:44,RepairBay:44};
 
 // Bilinear interpolation on a parallelogram face
 // tl=top-left, tr=top-right, br=bottom-right, bl=bottom-left (screen coords)
@@ -2414,16 +2414,52 @@ ctx.strokeStyle='#666';ctx.lineWidth=2;ctx.beginPath();ctx.arc(trX,trY+24,3,0,Ma
 break;}
 
 case 'Turret':{
-// Small team-coloured bunker with gun barrel
-drawIsoBox(bsx,bsy,tw,th,bh,p.mid,p.dark,p.base);
+// Armoured concrete base with face detailing
+drawIsoBox(bsx,bsy,tw,th,bh,'#484840','#282820','#343428');
+// SW face: team stripe top + inset panel + horizontal seam
+drawFaceRect(fl,fb,fbb,flb,0,0,1,.07,p.stripe);
+drawFaceRect(fl,fb,fbb,flb,.05,.1,.95,.9,'#2e2e28');
+drawFaceRect(fl,fb,fbb,flb,.05,.48,.95,.52,'rgba(0,0,0,0.6)');
+// SE face: same treatment
+drawFaceRect(fb,fr,frb,fbb,0,0,1,.07,p.stripe);
+drawFaceRect(fb,fr,frb,fbb,.05,.1,.95,.9,'#2a2a22');
+drawFaceRect(fb,fr,frb,fbb,.05,.48,.95,.52,'rgba(0,0,0,0.6)');
+// Bolts on SW face corners
+for(const[ru,rv] of [[.12,.22],[.88,.22],[.12,.78],[.88,.78]]){
+const rpt=facePoint(fl,fb,fbb,flb,ru,rv);ctx.fillStyle='#4a4a42';ctx.beginPath();ctx.arc(rpt.x,rpt.y,1.2,0,Math.PI*2);ctx.fill();}
 const tp2=isoProject((b.tx+.5)*TILE,(b.ty+.5)*TILE);
-// Dome
-ctx.fillStyle=p.dark;ctx.beginPath();ctx.arc(tp2.x,tp2.y-bh,11,0,Math.PI*2);ctx.fill();
-ctx.fillStyle=p.base;ctx.beginPath();ctx.arc(tp2.x,tp2.y-bh,8,0,Math.PI*2);ctx.fill();
-ctx.fillStyle=p.lite;ctx.beginPath();ctx.arc(tp2.x-2,tp2.y-bh-2,3,0,Math.PI*2);ctx.fill();
-// Barrel pointing SE
-ctx.strokeStyle=p.dark;ctx.lineWidth=5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(tp2.x,tp2.y-bh);ctx.lineTo(tp2.x+18,tp2.y-bh+9);ctx.stroke();
-ctx.strokeStyle=p.steel;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(tp2.x,tp2.y-bh);ctx.lineTo(tp2.x+18,tp2.y-bh+9);ctx.stroke();
+const tx2=tp2.x,ty2=tp2.y-bh;
+// Rotation ring mount
+const rmg=ctx.createRadialGradient(tx2,ty2,1,tx2,ty2,13);
+rmg.addColorStop(0,p.steel||'#8090a8');rmg.addColorStop(0.5,p.mid);rmg.addColorStop(1,'#0e0e12');
+ctx.fillStyle=rmg;ctx.beginPath();ctx.ellipse(tx2,ty2,13,6,0,0,Math.PI*2);ctx.fill();
+ctx.strokeStyle=p.acc;ctx.lineWidth=1.2;ctx.beginPath();ctx.ellipse(tx2,ty2,13,6,0,0,Math.PI*2);ctx.stroke();
+ctx.strokeStyle='rgba(0,0,0,0.55)';ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(tx2,ty2,8,4,0,0,Math.PI*2);ctx.stroke();
+// Housing drop shadow
+ctx.fillStyle='rgba(0,0,0,0.28)';ctx.beginPath();ctx.ellipse(tx2+1,ty2-4,12,5,0,0,Math.PI*2);ctx.fill();
+// Armoured angular housing
+const hx=tx2,hy=ty2-10;
+const hg=ctx.createLinearGradient(hx-10,hy-6,hx+8,hy+6);hg.addColorStop(0,p.lite);hg.addColorStop(0.4,p.base);hg.addColorStop(1,p.dark);
+ctx.fillStyle=hg;ctx.beginPath();ctx.moveTo(hx-10,hy+4);ctx.lineTo(hx-8,hy-4);ctx.lineTo(hx-1,hy-9);ctx.lineTo(hx+7,hy-6);ctx.lineTo(hx+10,hy+1);ctx.lineTo(hx+7,hy+6);ctx.lineTo(hx-7,hy+6);ctx.closePath();ctx.fill();
+ctx.strokeStyle=p.dark;ctx.lineWidth=1;ctx.stroke();
+// Top armour highlight
+ctx.fillStyle='rgba(255,255,255,0.14)';ctx.beginPath();ctx.moveTo(hx-8,hy-4);ctx.lineTo(hx-1,hy-9);ctx.lineTo(hx+4,hy-7);ctx.lineTo(hx-3,hy-2);ctx.closePath();ctx.fill();
+// Sensor slit with red glow
+const gs=G.time%1;
+ctx.fillStyle='#030509';ctx.fillRect(hx-7,hy+1,14,3);
+ctx.fillStyle=`rgba(255,20,20,${0.55+gs*0.3})`;ctx.fillRect(hx-6,hy+2,12,1);
+ctx.fillStyle=`rgba(255,0,0,${0.05+gs*0.04})`;ctx.beginPath();ctx.ellipse(hx,hy+2,9,4,0,0,Math.PI*2);ctx.fill();
+// Team accent bar
+ctx.fillStyle=p.acc;ctx.fillRect(hx-6,hy+5,12,2);
+// Twin heavy barrels pointing E-SE
+for(let i=0;i<2;i++){
+const oy=-2.5+i*5;
+ctx.strokeStyle='#14161c';ctx.lineWidth=4.5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(hx+4,hy+oy);ctx.lineTo(hx+24,hy+oy+10);ctx.stroke();
+ctx.strokeStyle=p.steel||'#8090a8';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(hx+4,hy+oy);ctx.lineTo(hx+24,hy+oy+10);ctx.stroke();
+// Thermal sleeve ring
+ctx.strokeStyle=p.dark;ctx.lineWidth=4;ctx.lineCap='butt';ctx.beginPath();ctx.moveTo(hx+13,hy+oy+5);ctx.lineTo(hx+15,hy+oy+6);ctx.stroke();
+// Muzzle brake
+ctx.fillStyle='#1e2228';ctx.beginPath();ctx.arc(hx+24,hy+oy+10,3.5,0,Math.PI*2);ctx.fill();ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=0.8;ctx.stroke();}
 break;}
 
 case 'Radar':{
