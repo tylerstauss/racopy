@@ -593,6 +593,7 @@ const TILE_DETAIL = {
 let terrainCache = null;
 let terrainCacheDirty = true;
 let mmTerrainDirty = true, mmTerrainCache = null;
+let _uiTick=0;
 
 let isoTerrainCache = null;
 
@@ -837,6 +838,7 @@ for(let t=0;t<np;t++){const c=SPAWN_CORNERS[t];spawnBase(t,c.bx,c.by);}
 upPow();
 buildTerrainCache();
 rebuildPassMap();
+buildOreTiles();
 }
 
 // mkBldg: buildings can optionally be placed as "under construction"
@@ -851,7 +853,10 @@ isBuilding:true, complete:instant,
 constructProg:instant?1:0, constructTime:d.bt,
 range:d.range, dmg:d.dmg, fr:d.fr,
 at:0, bq:[], so:{x:d.w*TILE+TILE,y:TILE}, rally:null};
-G.entities.push(e); return e;
+G.entities.push(e);
+// Mark tiles occupied immediately (even before construction completes)
+if(allBldgTiles){for(let dy=0;dy<d.h;dy++)for(let dx=0;dx<d.w;dx++){const nx=tx+dx,ny=ty+dy;if(ny>=0&&ny<MAP_H&&nx>=0&&nx<MAP_W)allBldgTiles[ny*MAP_W+nx]=1;}}
+return e;
 }
 function mkUnit(type,team,wx,wy){
 const d=UD[type];
@@ -883,12 +888,20 @@ for(const e of G.entities){if(!e.isBuilding||!e.complete)continue;G.power[e.team
 // Precomputed Uint8Array so pass() is O(1) instead of O(entities)
 let passMap=null;
 let completedBldgs=[]; // cached for pushOutOfBldgs — rebuilt with passMap
+let allBldgTiles=null;  // Uint8Array: 1 if any building (complete or not) occupies tile
+let oreTiles=[];        // [{x,y}] of ore tiles — rebuilt at init, shrinks as ore depletes
 function rebuildPassMap(){
 if(!G.map)return;
 if(!passMap)passMap=new Uint8Array(MAP_W*MAP_H);
-for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++){const t=G.map[y][x].type;passMap[y*MAP_W+x]=(t===T_DEEP||t===T_SHALLOW||t===T_ROCK)?0:1;}
+if(!allBldgTiles)allBldgTiles=new Uint8Array(MAP_W*MAP_H);
+for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++){const t=G.map[y][x].type;passMap[y*MAP_W+x]=(t===T_DEEP||t===T_SHALLOW||t===T_ROCK)?0:1;allBldgTiles[y*MAP_W+x]=0;}
 completedBldgs=[];
-for(const e of G.entities){if(!e.isBuilding||!e.complete||e.hp<=0)continue;completedBldgs.push(e);const d=BD[e.type];for(let dy=0;dy<d.h;dy++)for(let dx=0;dx<d.w;dx++){const nx=e.tx+dx,ny=e.ty+dy;if(ny>=0&&ny<MAP_H&&nx>=0&&nx<MAP_W)passMap[ny*MAP_W+nx]=0;}}
+for(const e of G.entities){if(!e.isBuilding||e.hp<=0)continue;const d=BD[e.type];for(let dy=0;dy<d.h;dy++)for(let dx=0;dx<d.w;dx++){const nx=e.tx+dx,ny=e.ty+dy;if(ny>=0&&ny<MAP_H&&nx>=0&&nx<MAP_W){allBldgTiles[ny*MAP_W+nx]=1;if(e.complete)passMap[ny*MAP_W+nx]=0;}}if(e.complete)completedBldgs.push(e);}
+}
+function buildOreTiles(){
+oreTiles=[];
+if(!G.map)return;
+for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++)if(G.map[y][x].type===T_ORE&&G.map[y][x].ore>0)oreTiles.push({x,y});
 }
 
 // ─── PATHFINDING ──────────────────────────────────────
@@ -939,20 +952,15 @@ const d=BD[type];
 for(let dy=0;dy<d.h;dy++)for(let dx=0;dx<d.w;dx++){
 const x=tx+dx,y=ty+dy;
 if(x<0||x>=MAP_W||y<0||y>=MAP_H)return false;
-const t=G.map[y][x].type;
-if(t===T_DEEP||t===T_SHALLOW||t===T_ROCK||t===T_ORE)return false;
-for(const e of G.entities){if(!e.isBuilding)continue;const ed=BD[e.type];if(x>=e.tx&&x<e.tx+ed.w&&y>=e.ty&&y<e.ty+ed.h)return false;}
+const idx=y*MAP_W+x;
+// O(1) checks: terrain+complete buildings via passMap, any building via allBldgTiles, ore via map
+if(passMap&&passMap[idx]===0)return false;
+if(allBldgTiles&&allBldgTiles[idx])return false;
+if(G.map[y][x].type===T_ORE)return false;
 }
-// ConYard is always placeable (it's the first building)
 if(type==='ConYard')return true;
-// Must be within BUILD_RADIUS tiles of a completed non-turret friendly building
-const anchors=G.entities.filter(e=>e.isBuilding&&e.complete&&e.team===team&&e.type!=='Turret');
-if(anchors.length>0){
 const cx=tx+d.w/2,cy=ty+d.h/2;
-const near=anchors.some(b=>{const bx=b.tx+BD[b.type].w/2,by=b.ty+BD[b.type].h/2;return Math.abs(cx-bx)<=BUILD_RADIUS&&Math.abs(cy-by)<=BUILD_RADIUS;});
-if(!near)return false;
-}
-return true;
+return completedBldgs.some(b=>b.team===team&&b.type!=='Turret'&&Math.abs(cx-(b.tx+BD[b.type].w/2))<=BUILD_RADIUS&&Math.abs(cy-(b.ty+BD[b.type].h/2))<=BUILD_RADIUS);
 }
 
 // ─── POWER / BUILD RATE ───────────────────────────────
@@ -1123,7 +1131,7 @@ const ty=~~(h.y/TILE),tx2=~~(h.x/TILE);
 const tile=G.map[ty]?.[tx2];
 if(tile&&tile.type===T_ORE&&tile.ore>0){
 const a=Math.min(10,tile.ore,h.maxOre-h.ore);tile.ore-=a;h.ore+=a;
-if(tile.ore<=0){tile.type=T_DIRT;terrainCacheDirty=true;mmTerrainDirty=true;}
+if(tile.ore<=0){tile.type=T_DIRT;terrainCacheDirty=true;mmTerrainDirty=true;oreTiles=oreTiles.filter(t=>t.x!==tx2||t.y!==ty);}
 if(h.ore>=h.maxOre){h.state='returnOre';const ref=G.entities.find(r=>r.type==='Refinery'&&r.team===h.team&&r.hp>0);if(ref){const pt=nearBldgPt(ref);h.path=fp(h.x,h.y,pt.x,pt.y);}}
 } else h.state='findOre';
 }
@@ -1193,7 +1201,7 @@ if(ox<oy){u.x+=ox*(dx>=0?1:-1);}
 else{u.y+=oy*(dy>=0?1:-1);}
 }
 }
-function findOre(wx,wy){let best=null,bd=Infinity;for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++){if(G.map[y][x].type===T_ORE&&G.map[y][x].ore>0){const d=d2p({x:wx,y:wy},{x:x*TILE,y:y*TILE});if(d<bd){bd=d;best={x,y};}}}return best;}
+function findOre(wx,wy){let best=null,bd=Infinity;for(const t of oreTiles){const d=d2p({x:wx,y:wy},{x:t.x*TILE,y:t.y*TILE});if(d<bd){bd=d;best=t;}}return best;}
 function findEnemy(wx,wy,range,team){let best=null,bd=Infinity;for(const e of G.entities){if(e.team===team||e.hp<=0)continue;const d=d2p({x:wx,y:wy},e);if(d<range*range&&d<bd){bd=d;best=e;}}return best;}
 function findFriendlyBldgAt(wx,wy,team=MP.myTeam){for(const e of [...G.entities].reverse()){if(e.hp<=0||!e.isBuilding||e.team!==team)continue;const ex=e.tx*TILE+BD[e.type].w*TILE/2,ey=e.ty*TILE+BD[e.type].h*TILE/2,r=Math.min(BD[e.type].w,BD[e.type].h)*TILE/2+8;if(Math.abs(wx-ex)<r&&Math.abs(wy-ey)<r)return e;}return null;}
 function dealDmg(t,a){if(!t||t.hp<=0)return;const actualDmg=a/(t.isUnit?UD[t.type]?.arm||1:1);t.hp-=actualDmg;spawnHit(t.x,t.y);if(G.dmgNums)G.dmgNums.push({x:t.x+(Math.random()-0.5)*20,y:t.y-10,val:~~(actualDmg),life:1.2,vy:-40});}
@@ -1224,7 +1232,7 @@ const cfg=AI_CFG[diff];
 if(cfg.creditBonus>0)G.credits[aiTeam]+=cfg.creditBonus*(cfg.tMin+cfg.tMax)/2*0.04;
 
 const cr=G.credits[aiTeam];
-const bs=G.entities.filter(e=>e.isBuilding&&e.team===aiTeam&&e.complete);
+const bs=completedBldgs.filter(e=>e.team===aiTeam);
 const us=G.entities.filter(e=>e.isUnit&&e.team===aiTeam);
 const has=t=>bs.some(b=>b.type===t);
 const cony=bs.find(b=>b.type==='ConYard');
@@ -3050,6 +3058,7 @@ radarBtn.textContent='🛰 SPY';radarBtn.style.borderColor='#ff4444';radarBtn.st
 }
 }
 
+if(++_uiTick%3!==0)return;
 const bar=document.getElementById('bottomBar');
 bar.innerHTML='';
 if(!G.selected.length){
