@@ -214,6 +214,7 @@ html,body{width:100%;height:100%;background:#000;color:var(--grn);font-family:'S
 <span id="gameTime" class="res">0:00</span>
 <span id="mpTag" style="display:none;font-size:10px;padding:2px 7px;border-radius:3px;font-family:Orbitron,sans-serif;letter-spacing:1px;"></span>
 <span id="pingTxt"></span>
+<span id="perfStats" style="font-size:9px;color:#888;font-family:monospace;margin-left:6px;white-space:nowrap;"></span>
 <button id="radarBtn" onclick="activateRadarSpy()" style="display:none;background:none;border:1px solid #440000;color:#ff8888;font-size:10px;padding:2px 8px;cursor:pointer;border-radius:3px;font-family:Orbitron,sans-serif;letter-spacing:1px;white-space:nowrap;flex-shrink:0;margin-left:4px;"></button>
 <button id="chatToggleBtn" onclick="toggleChat()" style="background:none;border:1px solid #440000;color:#ff8888;font-size:15px;width:30px;height:30px;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;margin-left:4px;">💬</button>
 <button class="zoom-btn" onclick="camZoom(1.25)" title="Zoom in">+</button>
@@ -909,6 +910,7 @@ for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++)if(G.map[y][x].type===T_ORE&&G.m
 const _fpClosed=new Uint16Array(MAP_W*MAP_H);
 let _fpGen=1;
 function fp(sx,sy,ex,ey){
+_perfAstar++;
 const stx=~~(sx/TILE),sty=~~(sy/TILE),etx=~~(ex/TILE),ety=~~(ey/TILE);
 if(stx===etx&&sty===ety)return[];
 if(++_fpGen>60000){_fpClosed.fill(0);_fpGen=1;}
@@ -933,7 +935,7 @@ const g=c.g+(dx&&dy?1.4:1),h=heur(nx,ny,etx,ety);
 open.push({x:nx,y:ny,g,h,f:g+h,p:c});
 }
 }
-return[];
+_perfAstarFail++;return[];
 }
 // Octile distance — admissible for 8-directional movement, no sqrt
 function heur(x1,y1,x2,y2){const dx=Math.abs(x2-x1),dy=Math.abs(y2-y1);return dx<dy?dy+dx*0.414:dx+dy*0.414;}
@@ -981,14 +983,29 @@ function hasPower(team){return (G.power[team]||0)>=(G.pu[team]||0);}
 
 // ─── UPDATE ───────────────────────────────────────────
 let lastTime=0;
+// ─── PERF COUNTERS ────────────────────────────────────
+let _perfFps=0,_perfFt=0,_perfAstar=0,_perfAstarFail=0,_perfDump=0;
+let _perfFpsAcc=0,_perfFtAcc=0,_perfFrames=0;
 function gameLoop(ts){
 if(!G.gameOver)requestAnimationFrame(gameLoop);
+const _t0=performance.now();
 const dt=Math.min((ts-lastTime)/1000,.05); lastTime=ts;
 G.time+=dt; G.tick++;
 if(MP.mode!=='client') update(dt);
 updateFog();
 render(); updateUI();
 if(MP.mode==='host'&&MP.conns.some(c=>c&&c.open)){MP.stTimer-=dt;if(MP.stTimer<=0){MP.stTimer=0.25;mpSendState();}}
+// Accumulate perf stats
+const _ft=performance.now()-_t0;
+_perfFtAcc+=_ft; _perfFpsAcc+=dt>0?1/dt:0; _perfFrames++;
+_perfDump+=dt;
+if(_perfDump>=5){
+  _perfFps=~~(_perfFpsAcc/_perfFrames);
+  _perfFt=+(_perfFtAcc/_perfFrames).toFixed(1);
+  const astar=_perfAstar,astarFail=_perfAstarFail;
+  console.log(`[PERF] fps=${_perfFps} frameMs=${_perfFt} entities=${G.entities?.length||0} A*=${astar/5}/s (${astarFail/5} fail/s)`);
+  _perfFpsAcc=0;_perfFtAcc=0;_perfFrames=0;_perfAstar=0;_perfAstarFail=0;_perfDump=0;
+}
 }
 
 function update(dt){
@@ -3015,6 +3032,8 @@ return isx>=cam.x-200&&isx<=cam.x+canvas.width/z+200&&isy>=cam.y-200&&isy<=cam.y
 function updateUI(){
 const mt=MP.myTeam;
 document.getElementById('credits').textContent=~~G.credits[mt];
+if(_perfFrames>0){const ps=document.getElementById('perfStats');if(ps)ps.textContent=`${~~(_perfFpsAcc/(_perfFrames||1))}fps ${+(_perfFtAcc/(_perfFrames||1)).toFixed(1)}ms A*:${_perfAstar}`;}
+
 const rate=buildRate(mt);
 const rateTxt=rate===0?' ⛔':rate<1?` ${~~(rate*100)}%`:rate>1?` ${~~(rate*100)}%`:'';
 document.getElementById('powerTxt').textContent=`⚡${G.power[mt]}/${G.pu[mt]}${rateTxt}`;
