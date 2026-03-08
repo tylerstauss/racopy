@@ -592,6 +592,7 @@ const TILE_DETAIL = {
 // Pre-render terrain into an offscreen canvas for speed
 let terrainCache = null;
 let terrainCacheDirty = true;
+let mmTerrainDirty = true, mmTerrainCache = null;
 
 let isoTerrainCache = null;
 
@@ -819,7 +820,7 @@ buildSplashLibrary();
 
 // ─── GAME INIT ────────────────────────────────────────
 function initGame(){
-terrainCacheDirty=true; terrainCache=null;
+terrainCacheDirty=true; mmTerrainDirty=true; terrainCache=null; mmTerrainCache=null;
 seedRng(document.getElementById('mapSeedInput')?.value || String(Date.now()));
 const np=MP.numPlayers||2;
 G={map:generateMap(),entities:[],nextId:1,
@@ -1034,7 +1035,7 @@ if(dead.isBuilding&&G.stats)G.stats.bldgsKilled[killer]++;
 spawnEx(dead.x,dead.y,dead.isBuilding?3:1);
 G.selected=G.selected.filter(s=>s!==dead);
 // Redraw terrain if ore tile changed
-terrainCacheDirty=true;
+terrainCacheDirty=true; mmTerrainDirty=true;
 G.entities.splice(i,1); upPow();
 }
 }
@@ -1105,7 +1106,7 @@ const ty=~~(h.y/TILE),tx2=~~(h.x/TILE);
 const tile=G.map[ty]?.[tx2];
 if(tile&&tile.type===T_ORE&&tile.ore>0){
 const a=Math.min(10,tile.ore,h.maxOre-h.ore);tile.ore-=a;h.ore+=a;
-if(tile.ore<=0){tile.type=T_DIRT;terrainCacheDirty=true;}
+if(tile.ore<=0){tile.type=T_DIRT;terrainCacheDirty=true;mmTerrainDirty=true;}
 if(h.ore>=h.maxOre){h.state='returnOre';const ref=G.entities.find(r=>r.type==='Refinery'&&r.team===h.team&&r.hp>0);if(ref){const pt=nearBldgPt(ref);h.path=fp(h.x,h.y,pt.x,pt.y);}}
 } else h.state='findOre';
 }
@@ -1505,21 +1506,22 @@ ctx.fillStyle=projColorsDim[p.team]||'rgba(255,255,255,0.25)';
 ctx.beginPath(); ctx.arc(ptx,pty,2,0,Math.PI*2); ctx.fill();
 }
 
-// Fog overlay — diamond tiles
+// Fog overlay — batch all diamond tiles into two Path2D objects (explored / unseen)
 if(G.fog){
 const hw=ISO_W/2,hh=ISO_H/2;
+const fogExp=new Path2D(),fogUnk=new Path2D();
 for(let sum=0;sum<MAP_W+MAP_H-1;sum++){
 for(let ftx=Math.max(0,sum-(MAP_H-1));ftx<=Math.min(sum,MAP_W-1);ftx++){
 const fty=sum-ftx;
 const f=G.fog[fty]?.[ftx]??0;
 if(f===2)continue;
 const{x:fsx,y:fsy}=isoProject(ftx*TILE,fty*TILE);
-ctx.fillStyle=f===1?'rgba(0,0,0,0.55)':'rgba(0,0,0,0.88)';
-ctx.beginPath();
-ctx.moveTo(fsx,fsy-hh);ctx.lineTo(fsx+hw,fsy);ctx.lineTo(fsx,fsy+hh);ctx.lineTo(fsx-hw,fsy);
-ctx.closePath();ctx.fill();
+const p=f===1?fogExp:fogUnk;
+p.moveTo(fsx,fsy-hh);p.lineTo(fsx+hw,fsy);p.lineTo(fsx,fsy+hh);p.lineTo(fsx-hw,fsy);p.closePath();
 }
 }
+ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fill(fogExp);
+ctx.fillStyle='rgba(0,0,0,0.88)';ctx.fill(fogUnk);
 }
 
 // Particles
@@ -2931,16 +2933,23 @@ ctx.fillRect(x+1,y+1,Math.max(0,(w-2)*p),3);
 function renderMM(){
 if(!mmVisible)return;
 const mw=MC.width,mh=MC.height;
-mctx.fillStyle='#001a0a'; mctx.fillRect(0,0,mw,mh);
-// Terrain on minimap
+// Terrain — cached offscreen canvas, only rebuilt when map changes
+if(mmTerrainDirty||!mmTerrainCache||mmTerrainCache.width!==mw){
+if(!mmTerrainCache){mmTerrainCache=document.createElement('canvas');}
+mmTerrainCache.width=mw;mmTerrainCache.height=mh;
+const tc=mmTerrainCache.getContext('2d');
+tc.fillStyle='#001a0a';tc.fillRect(0,0,mw,mh);
+const tw=Math.ceil(mw/MAP_W)+1,th=Math.ceil(mh/MAP_H)+1;
 for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++){
 const t=G.map[y][x].type;
 const c=t===T_DEEP?'#0a1e3a':t===T_SHALLOW?'#1a3a60':t===T_SAND?'#b09050':
 t===T_GRASS?'#2d5a1b':t===T_FOREST?'#1a3d0e':t===T_DIRT?'#6b4f2a':
 t===T_MUD?'#4a3820':t===T_ROCK?'#525252':t===T_ORE?'#9a6600':'#2d5a1b';
-mctx.fillStyle=c;
-mctx.fillRect(~~(x*mw/MAP_W),~~(y*mh/MAP_H),Math.ceil(mw/MAP_W)+1,Math.ceil(mh/MAP_H)+1);
+tc.fillStyle=c;tc.fillRect(~~(x*mw/MAP_W),~~(y*mh/MAP_H),tw,th);
 }
+mmTerrainDirty=false;
+}
+mctx.drawImage(mmTerrainCache,0,0);
 const mmVisTeams=G.allies&&G.allies[MP.myTeam]||[MP.myTeam];
 for(const e of G.entities){
 if(e.hp<=0)continue;
@@ -2959,14 +2968,15 @@ if(e.isBuilding){const d=BD[e.type];mctx.fillRect(~~(e.tx*mw/MAP_W),~~(e.ty*mh/M
 else mctx.fillRect(~~(e.x/PW*mw)-1,~~(e.y/PH*mh)-1,3,3);
 mctx.globalAlpha=1;
 }
-// Fog overlay on minimap
+// Fog overlay on minimap — batched into two fill calls
 if(G.fog){
-for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++){
-const fv=G.fog[y][x];
-if(fv===2)continue;
-mctx.fillStyle=fv===1?'rgba(0,0,0,0.45)':'rgba(0,0,0,0.82)';
-mctx.fillRect(~~(x*mw/MAP_W),~~(y*mh/MAP_H),Math.ceil(mw/MAP_W)+1,Math.ceil(mh/MAP_H)+1);
-}
+const tw=Math.ceil(mw/MAP_W)+1,th=Math.ceil(mh/MAP_H)+1;
+mctx.beginPath();
+for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++){if(G.fog[y][x]===1)mctx.rect(~~(x*mw/MAP_W),~~(y*mh/MAP_H),tw,th);}
+mctx.fillStyle='rgba(0,0,0,0.45)';mctx.fill();
+mctx.beginPath();
+for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++){if(G.fog[y][x]===0)mctx.rect(~~(x*mw/MAP_W),~~(y*mh/MAP_H),tw,th);}
+mctx.fillStyle='rgba(0,0,0,0.82)';mctx.fill();
 }
 const z=gz(),cam=G.camera;
 const{x:camWX,y:camWY}=isoUnproject(cam.x,cam.y);
@@ -3847,7 +3857,7 @@ MP.numPlayers=msg.numPlayers||2;
 MP.gameMode=msg.gameMode||'ffa';
 MP.aiSlots=(msg.aiSlots||[]).map(s=>({team:s.team,diff:s.diff,timer:0}));
 initGame();
-G.map=msg.map; terrainCacheDirty=true;
+G.map=msg.map; terrainCacheDirty=true; mmTerrainDirty=true;
 G.allies=msg.allies||buildAllies(MP.numPlayers,MP.gameMode);
 G.aiSlots=MP.aiSlots.map(s=>Object.assign({},s));
 mpApplyState(msg);
