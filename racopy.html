@@ -595,6 +595,9 @@ let terrainCache = null;
 let terrainCacheDirty = true;
 let mmTerrainDirty = true, mmTerrainCache = null;
 let _uiTick=0;
+let _topBarH=0,_botBarH=0;
+function _cacheBarH(){_topBarH=document.getElementById('topBar')?.offsetHeight||44;_botBarH=document.getElementById('bottomBar')?.offsetHeight||60;}
+window.addEventListener('resize',_cacheBarH);
 
 let isoTerrainCache = null;
 
@@ -991,11 +994,16 @@ if(!G.gameOver)requestAnimationFrame(gameLoop);
 const _t0=performance.now();
 const dt=Math.min((ts-lastTime)/1000,.05); lastTime=ts;
 G.time+=dt; G.tick++;
+const _tu=performance.now();
 if(MP.mode!=='client') update(dt);
+const _tf=performance.now();
 updateFog();
+const _tr=performance.now();
 render(); updateUI();
+const _tend=performance.now();
+if(_perfDump>4.9)console.log(`[SECTION] update=${(_tf-_tu).toFixed(1)} fog=${(_tr-_tf).toFixed(1)} render=${(_tend-_tr).toFixed(1)}ms`);
 if(MP.mode==='host'&&MP.conns.some(c=>c&&c.open)){MP.stTimer-=dt;if(MP.stTimer<=0){MP.stTimer=0.25;mpSendState();}}
-// Accumulate perf stats
+// Accumulate perf stats — section breakdown logged separately
 const _ft=performance.now()-_t0;
 _perfFtAcc+=_ft; _perfFpsAcc+=dt>0?1/dt:0; _perfFrames++;
 _perfDump+=dt;
@@ -3081,6 +3089,7 @@ radarBtn.textContent='🛰 SPY';radarBtn.style.borderColor='#ff4444';radarBtn.st
 }
 
 if(++_uiTick%3!==0)return;
+_cacheBarH();
 const bar=document.getElementById('bottomBar');
 bar.innerHTML='';
 if(!G.selected.length){
@@ -3660,10 +3669,7 @@ requestAnimationFrame(scrollCamera);
 
 // ─── HELPERS ──────────────────────────────────────────
 function resizeCanvas(){
-const w=window.innerWidth;
-const h=window.innerHeight
--document.getElementById('topBar').offsetHeight
--document.getElementById('bottomBar').offsetHeight;
+const w=window.innerWidth,h=window.innerHeight-_topBarH-_botBarH;
 if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
 }
 function toggleBuild(){
@@ -3907,6 +3913,7 @@ G.camera.zoom=window.innerWidth<600?.7:1;
 const myCony=G.entities.find(e=>e.isBuilding&&e.type==='ConYard'&&e.team===MP.myTeam);
 if(myCony){const{x:_cix,y:_ciy}=isoProject(myCony.tx*TILE,myCony.ty*TILE);G.camera.x=Math.max(0,_cix-canvas.width/(2*G.camera.zoom));G.camera.y=Math.max(0,_ciy-canvas.height/(2*G.camera.zoom));}
 else{G.camera.x=ISO_PW-canvas.width/G.camera.zoom;G.camera.y=ISO_PH-canvas.height/G.camera.zoom;}
+_cacheBarH();
 if(!G._loopStarted){G._loopStarted=true;scrollCamera();requestAnimationFrame(gameLoop);}
 playSound('ready');
 const teamNames=['Blue','Red','Green','Yellow'];
@@ -4131,6 +4138,7 @@ const myStart=SPAWN_CORNERS[MP.myTeam]||SPAWN_CORNERS[0];
 const {x: _camIsoX, y: _camIsoY} = isoProject(myStart.bx*TILE, myStart.by*TILE);
 G.camera.x=Math.max(0,_camIsoX-canvas.width/(2*G.camera.zoom));
 G.camera.y=Math.max(0,_camIsoY-canvas.height/(2*G.camera.zoom));
+_cacheBarH();
 if(!G._loopStarted){G._loopStarted=true;scrollCamera();requestAnimationFrame(gameLoop);}
 playSound('ready');
 showMsg('⚔️ Red Alert! Destroy the enemy base!');
