@@ -884,7 +884,7 @@ if(stx===etx&&sty===ety)return[];
 const open=[{x:stx,y:sty,g:0,h:heur(stx,sty,etx,ety),p:null}];
 const closed=new Set(),key=(x,y)=>x+','+y;
 let it=0;
-while(open.length&&it++<450){
+while(open.length&&it++<3000){
 open.sort((a,b)=>(a.g+a.h)-(b.g+b.h));
 const c=open.shift(),k=key(c.x,c.y);
 if(closed.has(k))continue; closed.add(k);
@@ -892,10 +892,12 @@ if(c.x===etx&&c.y===ety){const path=[];let n=c;while(n){path.unshift({x:n.x*TILE
 for(const[dx,dy]of[[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1]]){
 const nx=c.x+dx,ny=c.y+dy;
 if(nx<0||nx>=MAP_W||ny<0||ny>=MAP_H||closed.has(key(nx,ny))||!pass(nx,ny))continue;
+// Prevent diagonal corner-cutting around water/rock
+if(dx&&dy&&(!pass(c.x+dx,c.y)||!pass(c.x,c.y+dy)))continue;
 open.push({x:nx,y:ny,g:c.g+(dx&&dy?1.4:1),h:heur(nx,ny,etx,ety),p:c});
 }
 }
-return[{x:ex,y:ey}];
+return[];
 }
 function heur(x1,y1,x2,y2){return Math.sqrt((x2-x1)**2+(y2-y1)**2);}
 function pass(tx,ty){
