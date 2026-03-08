@@ -1519,8 +1519,13 @@ ctx.clearRect(0,0,canvas.width,canvas.height);
 const cam=G.camera, z=gz();
 ctx.save(); ctx.scale(z,z); ctx.translate(-cam.x,-cam.y);
 
-// Draw terrain from cache
-if(isoTerrainCache) ctx.drawImage(isoTerrainCache,0,0);
+// Draw terrain from cache — clipped to visible viewport (avoids blitting 4480×2240 at high zoom)
+if(isoTerrainCache){
+const vx=Math.max(0,cam.x|0),vy=Math.max(0,cam.y|0);
+const vw=Math.min(isoTerrainCache.width-vx,(canvas.width/z+1)|0);
+const vh=Math.min(isoTerrainCache.height-vy,(canvas.height/z+1)|0);
+if(vw>0&&vh>0)ctx.drawImage(isoTerrainCache,vx,vy,vw,vh,vx,vy,vw,vh);
+}
 
 // Building placement preview
 if(G.placingBuilding&&previewTX>=0){
@@ -1579,14 +1584,19 @@ ctx.fillStyle=projColorsDim[p.team]||'rgba(255,255,255,0.25)';
 ctx.beginPath(); ctx.arc(ptx,pty,2,0,Math.PI*2); ctx.fill();
 }
 
-// Fog overlay — two batched fills instead of 4800 individual beginPath/fill calls
+// Fog overlay — viewport-culled (only visible tiles) + inlined isoProject (no per-tile allocation)
 if(G.fog){
 const hw=ISO_W/2,hh=ISO_H/2;
+// Compute visible tile bounding box from camera viewport
+const _vl=cam.x,_vr=cam.x+canvas.width/z,_vt=cam.y,_vb=cam.y+canvas.height/z;
+const _um=(_vl-ISO_OX)/hw,_uM=(_vr-ISO_OX)/hw,_vm=_vt/hh,_vM=_vb/hh;
+const _ftx0=Math.max(0,~~((_um+_vm)/2)-1),_ftx1=Math.min(MAP_W-1,~~((_uM+_vM)/2)+2);
+const _fty0=Math.max(0,~~((_vm-_uM)/2)-1),_fty1=Math.min(MAP_H-1,~~((_vM-_um)/2)+2);
 ctx.beginPath();
-for(let sum=0;sum<MAP_W+MAP_H-1;sum++)for(let ftx=Math.max(0,sum-(MAP_H-1));ftx<=Math.min(sum,MAP_W-1);ftx++){const fty=sum-ftx;if((G.fog[fty]?.[ftx]??0)!==1)continue;const{x:fsx,y:fsy}=isoProject(ftx*TILE,fty*TILE);ctx.moveTo(fsx,fsy-hh);ctx.lineTo(fsx+hw,fsy);ctx.lineTo(fsx,fsy+hh);ctx.lineTo(fsx-hw,fsy);ctx.closePath();}
+for(let fty=_fty0;fty<=_fty1;fty++)for(let ftx=_ftx0;ftx<=_ftx1;ftx++){if((G.fog[fty]?.[ftx]??0)!==1)continue;const fsx=(ftx-fty)*hw+ISO_OX,fsy=(ftx+fty)*hh;ctx.moveTo(fsx,fsy-hh);ctx.lineTo(fsx+hw,fsy);ctx.lineTo(fsx,fsy+hh);ctx.lineTo(fsx-hw,fsy);ctx.closePath();}
 ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fill();
 ctx.beginPath();
-for(let sum=0;sum<MAP_W+MAP_H-1;sum++)for(let ftx=Math.max(0,sum-(MAP_H-1));ftx<=Math.min(sum,MAP_W-1);ftx++){const fty=sum-ftx;if((G.fog[fty]?.[ftx]??0)!==0)continue;const{x:fsx,y:fsy}=isoProject(ftx*TILE,fty*TILE);ctx.moveTo(fsx,fsy-hh);ctx.lineTo(fsx+hw,fsy);ctx.lineTo(fsx,fsy+hh);ctx.lineTo(fsx-hw,fsy);ctx.closePath();}
+for(let fty=_fty0;fty<=_fty1;fty++)for(let ftx=_ftx0;ftx<=_ftx1;ftx++){if((G.fog[fty]?.[ftx]??0)!==0)continue;const fsx=(ftx-fty)*hw+ISO_OX,fsy=(ftx+fty)*hh;ctx.moveTo(fsx,fsy-hh);ctx.lineTo(fsx+hw,fsy);ctx.lineTo(fsx,fsy+hh);ctx.lineTo(fsx-hw,fsy);ctx.closePath();}
 ctx.fillStyle='rgba(0,0,0,0.88)';ctx.fill();
 }
 
