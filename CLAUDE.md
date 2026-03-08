@@ -78,6 +78,15 @@ RADAR_COOLDOWN=120s, RADAR_DURATION=900s, RADAR_RADIUS=10 tiles
 const fv = G.fog[ty]?.[tx] ?? 0; // 0=unseen, 1=explored, 2=visible
 ```
 
+## Token efficiency
+See [`TOKEN_EFFICIENCY.md`](TOKEN_EFFICIENCY.md) for full guidelines. Key rules:
+- Read only the relevant section before editing — not the whole file
+- Only change what was asked; no refactoring, cosmetic fixes, or speculative additions
+- No comments or docstrings on unchanged code
+- Skip preamble in responses; lead with the change
+- Use `/compact Focus on code changes and errors` when context gets large
+- Give specific line ranges or function names in prompts to avoid broad scanning
+
 ## Workflow
 - **Commit & push immediately** after each feature — no confirmation needed
 - Test by opening `racopy.html` directly in browser
