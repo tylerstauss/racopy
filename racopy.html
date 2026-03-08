@@ -1570,7 +1570,12 @@ const da=(a.isBuilding?a.tx+BD[a.type].w/2:a.x/TILE)+(a.isBuilding?a.ty+BD[a.typ
 const db=(b.isBuilding?b.tx+BD[b.type].w/2:b.x/TILE)+(b.isBuilding?b.ty+BD[b.type].h/2:b.y/TILE);
 return da-db||(a.id||0)-(b.id||0);
 });
-for(const e of _visEnts){if(e.isBuilding)drawBldg(e);else drawUnit(e);}
+const _lod=z<0.6;
+for(const e of _visEnts){
+if(e.isBuilding)drawBldg(e);
+else if(_lod){const _isx=(e.x-e.y)+ISO_OX,_isy=(e.x+e.y)*0.5;drawUnitMini(e,_isx,_isy);}
+else drawUnit(e);
+}
 
 // Projectiles
 const projColors=['#aaff00','#ff4400','#44ffaa','#ffff44'];
@@ -2999,6 +3004,15 @@ ctx.arc(sx,sy,r+5,a,a+0.4);ctx.stroke();
 }
 }
 
+function drawUnitMini(u,sx,sy){
+const p=TPAL[u.team];
+const r=u.type==='Harvester'?10:u.type==='Tank'?9:u.type==='IFV'?7:5;
+ctx.fillStyle=p.base;ctx.beginPath();ctx.ellipse(sx,sy,r,r*0.55,0,0,Math.PI*2);ctx.fill();
+ctx.fillStyle=p.acc;ctx.beginPath();ctx.ellipse(sx,sy,r*0.45,r*0.25,0,0,Math.PI*2);ctx.fill();
+hpBar(sx-r,sy-r-5,r*2,u.hp,u.maxHp);
+if(G.selected.includes(u)){ctx.strokeStyle='#00ff55';ctx.lineWidth=1.5;ctx.setLineDash([2,2]);ctx.beginPath();ctx.ellipse(sx,sy,r+3,(r+3)*0.5,0,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);}
+}
+
 function hpBar(x,y,w,hp,mhp){
 const p=Math.max(0,hp/mhp);
 ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(x,y,w,5);
@@ -3062,7 +3076,7 @@ mctx.strokeRect(~~(camWX/PW*mw),~~(camWY/PH*mh),~~(canvas.width/z/ISO_PW*mw*2),~
 
 function inView(e,cam,z){
 const wx=e.x!==undefined?e.x:e.tx*TILE,wy=e.y!==undefined?e.y:e.ty*TILE;
-const{x:isx,y:isy}=isoProject(wx,wy);
+const isx=(wx-wy)+ISO_OX,isy=(wx+wy)*0.5;
 return isx>=cam.x-200&&isx<=cam.x+canvas.width/z+200&&isy>=cam.y-200&&isy<=cam.y+canvas.height/z+200;
 }
 
