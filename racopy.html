@@ -1071,6 +1071,7 @@ if(G.tick%90===0)checkVic();
 const REPAIR_RATE=25; // HP per second healed at RepairBay
 function updUnit(u,dt){
 u.at-=dt;
+if(u._prt>0)u._prt-=dt;
 
 // RepairBay: move to bay, heal over time, deduct credits proportionally
 if(u.state==='repairBay'){
@@ -1078,7 +1079,7 @@ const rb=u.repairBayRef;
 if(!rb||rb.hp<=0||rb.team!==u.team){u.state='idle';u.repairBayRef=null;return;}
 if(u.hp>=u.maxHp){u.hp=u.maxHp;u.state='idle';u.repairBayRef=null;if(u.team===MP.myTeam)showMsg('🔧 Repair complete!');return;}
 const pt=nearBldgPt(rb);
-if(dist(u,{x:pt.x,y:pt.y})>TILE*1.5){if(!u.path||!u.path.length)u.path=fp(u.x,u.y,pt.x,pt.y);movePath(u);return;}
+if(dist(u,{x:pt.x,y:pt.y})>TILE*1.5){if(!u.path||!u.path.length){if(!(u._prt>0)){u.path=fp(u.x,u.y,pt.x,pt.y);if(!u.path.length)u._prt=1.5;}}movePath(u);return;}
 // At bay: repair
 const unitCost=UD[u.type]?UD[u.type].cost:500;
 const costPerHp=(unitCost*0.5)/u.maxHp;
@@ -1106,12 +1107,13 @@ if(!u.path.length){u.state='idle';u.attackMoveDest=null;}
 if(u.rng>0&&u.dmg>0){
 const t=u.target&&u.target.hp>0?u.target:findEnemy(u.x,u.y,u.rng*1.5,u.team);
 if(t&&dist(u,t)<=u.rng){if(u.at<=0){dealDmg(t,u.dmg);spawnProj(u.x,u.y,t.x,t.y,u.team);u.at=1/u.fr;}if(dist(u,t)<=u.rng*.8)return;}
-if(t&&u.state==='attack'&&dist(u,t)>u.rng&&(!u.path||!u.path.length))u.path=fp(u.x,u.y,t.x,t.y);
+if(t&&u.state==='attack'&&dist(u,t)>u.rng&&(!u.path||!u.path.length)){if(!(u._prt>0)){u.path=fp(u.x,u.y,t.x,t.y);if(!u.path.length)u._prt=1.5;}}
 }
 movePath(u);
 for(const o of G.entities){if(o===u||o.isBuilding||o.hp<=0)continue;const dx=u.x-o.x,dy=u.y-o.y,d2=dx*dx+dy*dy;if(d2<400&&d2>0){const f=0.5/Math.sqrt(d2);u.x+=dx*f;u.y+=dy*f;}}
 }
 function updHarv(h,dt){
+if(h._prt>0)h._prt-=dt;
 if(h.state==='move'){
 movePath(h);
 if(!h.path||!h.path.length){
@@ -1142,17 +1144,18 @@ const ref=G.entities.find(r=>r.type==='Refinery'&&r.team===h.team&&r.hp>0);
 if(!h.path||!h.path.length){
 // nearBldgPt routes A* to an adjacent passable tile so the path actually completes
 if(ref&&dist(h,ref)<TILE*4){G.credits[h.team]+=h.ore*15;h.ore=0;h.state='findOre';}
-else if(ref){const pt=nearBldgPt(ref);h.path=fp(h.x,h.y,pt.x,pt.y);}
+else if(ref){if(!(h._prt>0)){const pt=nearBldgPt(ref);h.path=fp(h.x,h.y,pt.x,pt.y);if(!h.path.length)h._prt=1.5;}}
 else{h.ore=0;h.state='idle';}
 }
 }
 }
 function updRepairman(u,dt){
+if(u._prt>0)u._prt-=dt;
 if(u.state==='repair'&&u.repairTarget){
 const t=u.repairTarget;
 if(!t||t.hp<=0||t.team!==u.team){u.state='idle';u.repairTarget=null;return;}
 if(t.hp>=t.maxHp){t.hp=t.maxHp;u.state='idle';u.repairTarget=null;if(u.team===MP.myTeam)showMsg('✅ Repair complete!');return;}
-if(dist(u,t)>TILE*2){if(!u.path||!u.path.length)u.path=fp(u.x,u.y,t.x,t.y);movePath(u);}
+if(dist(u,t)>TILE*2){if(!u.path||!u.path.length){if(!(u._prt>0)){u.path=fp(u.x,u.y,t.x,t.y);if(!u.path.length)u._prt=1.5;}}movePath(u);}
 else{u.path=[];t.hp=Math.min(t.maxHp,t.hp+80*dt);
 // Green repair sparks
 if(Math.random()<0.3)G.particles.push({x:t.x+(Math.random()-.5)*t.w*.8,y:t.y+(Math.random()-.5)*t.h*.8,vx:(Math.random()-.5)*30,vy:-Math.random()*40-10,life:.4+Math.random()*.3,color:Math.random()>.5?'#00ff88':'#44ffbb'});}
