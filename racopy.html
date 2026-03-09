@@ -1271,7 +1271,7 @@ const AI_CFG={
   easy:   {tMin:6,  tMax:10, atkMin:9, bkMax:1, wfMax:1, wfMax2:1, riflePct:0.7, tankPct:0.45, minTurrets:1, maxTurrets:3,  maxPower:2, maxWF:1, maxRef:1, maxHarv:1, repairHp:0.35, defRange:5,  creditBonus:0,    atkReroute:0.05, garrison:0, splitGroups:1, waveInterval:999, defConYardHp:0},
   medium: {tMin:3,  tMax:5,  atkMin:5, bkMax:3, wfMax:2, wfMax2:2, riflePct:0.4, tankPct:0.7,  minTurrets:2, maxTurrets:5,  maxPower:4, maxWF:1, maxRef:2, maxHarv:2, repairHp:0.7,  defRange:8,  creditBonus:0,    atkReroute:0.2,  garrison:2, splitGroups:1, waveInterval:55,  defConYardHp:0.4},
   hard:   {tMin:1.5,tMax:3,  atkMin:4, bkMax:4, wfMax:3, wfMax2:3, riflePct:0.1, tankPct:0.82, minTurrets:3, maxTurrets:8,  maxPower:6, maxWF:2, maxRef:3, maxHarv:3, repairHp:0.82, defRange:12, creditBonus:300,  atkReroute:0.35, garrison:3, splitGroups:2, waveInterval:40,  defConYardHp:0.35},
-  amazing:{tMin:0.6,tMax:1.2,atkMin:3, bkMax:6, wfMax:4, wfMax2:5, riflePct:0.0, tankPct:0.88, minTurrets:4, maxTurrets:12, maxPower:8, maxWF:2, maxRef:3, maxHarv:4, repairHp:0.92, defRange:18, creditBonus:900,  atkReroute:0.5,  garrison:4, splitGroups:3, waveInterval:25,  defConYardHp:0.3},
+  amazing:{tMin:0.6,tMax:1.2,atkMin:10, bkMax:6, wfMax:4, wfMax2:5, riflePct:0.0, tankPct:0.88, minTurrets:3, maxTurrets:12, maxPower:8, maxWF:3, maxRef:3, maxHarv:4, repairHp:0.92, defRange:18, creditBonus:2000, atkReroute:0.5,  garrison:4, splitGroups:2, waveInterval:35,  defConYardHp:0.3},
 };
 
 function runAI(aiTeam){
@@ -1307,8 +1307,9 @@ else if(cr>=300)aiBld('Power',cony,aiTeam);
 if(powerCount<2&&cr>=300)aiBld('Power',cony,aiTeam);
 else if(!has('Refinery')&&cr>=2000)aiBld('Refinery',cony,aiTeam);
 else if(!has('Barracks')&&cr>=500)aiBld('Barracks',cony,aiTeam);
-else if(turretCount<cfg.minTurrets&&cr>=600)aiBldNear('Turret',cony,bs,aiTeam);
 else if(!has('WarFac')&&cr>=2000)aiBld('WarFac',cony,aiTeam);
+else if(refCount<2&&cr>=2000)aiBld('Refinery',cony,aiTeam);
+else if(turretCount<cfg.minTurrets&&cr>=600)aiBldNear('Turret',cony,bs,aiTeam);
 else if(!has('Radar')&&cr>=1000)aiBld('Radar',cony,aiTeam);
 // Expand economy: more refineries up to maxRef
 else if(refCount<cfg.maxRef&&cr>=2000)aiBld('Refinery',cony,aiTeam);
@@ -1364,7 +1365,7 @@ if(aiSlot)aiSlot.lastWave=G.time;
 const turrets=enemyBldgs.filter(e=>e.type==='Turret');
 const conyards=enemyBldgs.filter(e=>e.type==='ConYard');
 // Split into groups, each hitting a different target
-const numGroups=Math.min(cfg.splitGroups,attackers.length);
+const numGroups=Math.min(cfg.splitGroups,Math.max(1,Math.floor(attackers.length/4)));
 const groupSize=Math.ceil(attackers.length/numGroups);
 for(let g=0;g<numGroups;g++){
 const group=attackers.slice(g*groupSize,(g+1)*groupSize);
