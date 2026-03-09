@@ -858,6 +858,7 @@ constructProg:instant?1:0, constructTime:d.bt,
 range:d.range, dmg:d.dmg, fr:d.fr,
 at:0, bq:[], so:{x:d.w*TILE+TILE,y:TILE}, rally:null};
 G.entities.push(e);
+if(G.stats)G.stats.bldgsBuilt[team]++;
 // Mark tiles occupied immediately (even before construction completes)
 if(allBldgTiles){for(let dy=0;dy<d.h;dy++)for(let dx=0;dx<d.w;dx++){const nx=tx+dx,ny=ty+dy;if(ny>=0&&ny<MAP_H&&nx>=0&&nx<MAP_W)allBldgTiles[ny*MAP_W+nx]=1;}}
 return e;
@@ -870,7 +871,9 @@ rng:d.rng*TILE,dmg:d.dmg,fr:d.fr,arm:d.arm,
 at:0,isBuilding:false,isUnit:true,
 path:[],target:null,state:'idle',ht:0,ore:0,maxOre:200,
 angle:0,attackMoveDest:null};
-G.entities.push(e); return e;
+G.entities.push(e);
+if(G.stats)G.stats.unitsBuilt[team]++;
+return e;
 }
 function spawnBase(team,bx,by){
 mkBldg('ConYard',team,bx,by,true);
@@ -1050,14 +1053,12 @@ if(activeBuildId[e.team]===e.id){
 e.constructProg+=dt/e.constructTime*buildRate(e.team,e.type);
 if(e.constructProg>=1){
 e.constructProg=1; e.complete=true; e.hp=e.maxHp;
-if(G.stats)G.stats.bldgsBuilt[e.team]++;
 upPow(); rebuildPassMap();
 if(e.team===MP.myTeam){showMsg(`${BD[e.type].name} construction complete!`);playSound('build');}
 // Refinery comes with a free Harvester
 if(e.type==='Refinery'){
 const hv=mkUnit('Harvester',e.team,(e.tx+BD[e.type].w)*TILE,e.ty*TILE+TILE);
 hv.ref=e; hv.state='findOre';
-if(G.stats)G.stats.unitsBuilt[e.team]++;
 if(e.team===MP.myTeam) showMsg('⛏️ New Ore Truck deployed!');
 }
 }
@@ -1076,7 +1077,6 @@ const item=e.bq[0]; item.prog+=dt*buildRate(e.team);
 if(item.prog>=item.bt){
 e.bq.shift();
 const u=mkUnit(item.type,e.team,e.tx*TILE+e.so.x,e.ty*TILE+e.so.y);
-if(G.stats)G.stats.unitsBuilt[e.team]++;
 if(item.type==='Harvester'){u.ref=G.entities.find(r=>r.type==='Refinery'&&r.team===e.team);u.state='findOre';}
 else if(e.rally){u.state='move';u.path=fp(u.x,u.y,e.rally.x,e.rally.y);}
 if(e.team===MP.myTeam){showMsg(`${UD[item.type].name} ready!`);playSound('build');}
