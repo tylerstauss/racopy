@@ -834,7 +834,7 @@ selected:[],camera:{x:0,y:0,zoom:1},time:0,tick:0,gameOver:false,
 placingBuilding:null,particles:[],projectiles:[],
 moveMarkers:[],dmgNums:[],groups:{},
 fog:Array.from({length:MAP_H},()=>new Uint8Array(MAP_W)),
-stats:{kills:[0,0,0,0],bldgsKilled:[0,0,0,0],creditsSpent:[0,0,0,0]},
+stats:{kills:[0,0,0,0],bldgsKilled:[0,0,0,0],creditsSpent:[0,0,0,0],unitsBuilt:[0,0,0,0],bldgsBuilt:[0,0,0,0]},
 allies:{},aiSlots:[],radarReveals:[],radarCooldown:[0,0,0,0]};
 G.allies=buildAllies(np,MP.gameMode||'ffa');
 G.aiSlots=(MP.aiSlots||[]).map(s=>Object.assign({},s));
@@ -1050,12 +1050,14 @@ if(activeBuildId[e.team]===e.id){
 e.constructProg+=dt/e.constructTime*buildRate(e.team,e.type);
 if(e.constructProg>=1){
 e.constructProg=1; e.complete=true; e.hp=e.maxHp;
+if(G.stats)G.stats.bldgsBuilt[e.team]++;
 upPow(); rebuildPassMap();
 if(e.team===MP.myTeam){showMsg(`${BD[e.type].name} construction complete!`);playSound('build');}
 // Refinery comes with a free Harvester
 if(e.type==='Refinery'){
 const hv=mkUnit('Harvester',e.team,(e.tx+BD[e.type].w)*TILE,e.ty*TILE+TILE);
 hv.ref=e; hv.state='findOre';
+if(G.stats)G.stats.unitsBuilt[e.team]++;
 if(e.team===MP.myTeam) showMsg('⛏️ New Ore Truck deployed!');
 }
 }
@@ -1074,6 +1076,7 @@ const item=e.bq[0]; item.prog+=dt*buildRate(e.team);
 if(item.prog>=item.bt){
 e.bq.shift();
 const u=mkUnit(item.type,e.team,e.tx*TILE+e.so.x,e.ty*TILE+e.so.y);
+if(G.stats)G.stats.unitsBuilt[e.team]++;
 if(item.type==='Harvester'){u.ref=G.entities.find(r=>r.type==='Refinery'&&r.team===e.team);u.state='findOre';}
 else if(e.rally){u.state='move';u.path=fp(u.x,u.y,e.rally.x,e.rally.y);}
 if(e.team===MP.myTeam){showMsg(`${UD[item.type].name} ready!`);playSound('build');}
@@ -1467,7 +1470,7 @@ if(os){
 let html='';
 for(let t=0;t<np;t++){
 const dot=['#4488ff','#ff4444','#44aa44','#cccc44'][t];
-html+=`<div style="font-size:12px;margin:2px 0"><span style="color:${dot}">■ ${teamNames[t]}</span> — Units: ${s.kills[t]} · Bldgs: ${s.bldgsKilled[t]}</div>`;
+html+=`<div style="font-size:12px;margin:4px 0;line-height:1.6"><span style="color:${dot};font-weight:bold">■ ${teamNames[t]}</span><br><span style="color:#aaa;margin-left:16px">Killed: ${s.kills[t]} units · ${s.bldgsKilled[t]} buildings &nbsp;|&nbsp; Built: ${s.unitsBuilt[t]||0} units · ${s.bldgsBuilt[t]||0} buildings</span></div>`;
 }
 os.innerHTML=html;
 }
