@@ -558,7 +558,7 @@
             const corrDist = (distWorld / CS) * Math.cos(angleDiff);
             if (corrDist <= 0) continue;
 
-            const spriteH = Math.min(CH * 0.95, (CH / corrDist) * 2.0);
+            const spriteH = Math.min(CH * 0.60, (CH / corrDist) * 1.05);
             const spriteW = Math.round(spriteH * 0.55);
             const sx = Math.round(screenX - spriteW / 2);
             const sy = Math.round(CH / 2 + player.bobOffset - spriteH / 2);
@@ -586,12 +586,12 @@
             }
             ctx.clip();
 
-            drawHumanFigure(sx, sy, spriteW, spriteH, shade, e.type);
+            drawHumanFigure(sx, sy, spriteW, spriteH, shade, e.type, e.state === 'flee');
             ctx.restore();
         }
     }
 
-    function drawHumanFigure(sx, sy, sw, sh, shade, type) {
+    function drawHumanFigure(sx, sy, sw, sh, shade, type, showBack) {
         const s = shade;
         const c = (r, g, b) => `rgb(${Math.round(r*s)},${Math.round(g*s)},${Math.round(b*s)})`;
 
@@ -616,239 +616,237 @@
         const llx = sx + bm;
         const lrx = llx + lw + lgp;
 
+        // Helper: draw small NPC gun in right hand (left from viewer), proportional to sprite
+        function npcGun(ax, ay) {
+            const gW=Math.max(2,sw*0.13), gH=Math.max(3,sh*0.065);
+            ctx.fillStyle=c(52,52,56); ctx.fillRect(ax,ay,gW,gH);
+            ctx.fillStyle=c(36,36,40); ctx.fillRect(ax+gW*0.2,ay-gH*0.38,gW*0.5,gH*0.42);
+            ctx.fillStyle=c(24,18,12); ctx.fillRect(ax+gW*0.05,ay+gH*0.5,gW*0.65,gH*0.6);
+            ctx.fillStyle=c(72,68,76); ctx.fillRect(ax+1,ay+1,Math.max(1,gW*0.22),gH*0.55);
+        }
+
         if (type === 0) {
-            // === BLACK SUIT GUARD (GoldenEye tuxedo style) ===
+            // === BLACK SUIT GUARD ===
             const skR=200,skG=162,skB=124;
-            const jkR=26, jkG=26, jkB=30;   // dark jacket
-            const ptR=20, ptG=20, ptB=26;   // dark trousers
-            const shR=228,shG=226,shB=220;  // white shirt
+            const jkR=26, jkG=26, jkB=30;
+            const ptR=20, ptG=20, ptB=26;
+            const shR=228,shG=226,shB=220;
 
-            // Hair (dark, slicked back)
-            ctx.fillStyle = c(40,32,24);
-            ctx.fillRect(sx+hm, headY, sw-hm*2, headH*0.32);
-            // Hair side shadow
-            ctx.fillStyle = c(30,24,18);
-            ctx.fillRect(sx+hm, headY, sw*0.07, headH*0.32);
+            // Hair (same front/back)
+            ctx.fillStyle=c(40,32,24); ctx.fillRect(sx+hm,headY,sw-hm*2,headH*0.32);
+            ctx.fillStyle=c(30,24,18); ctx.fillRect(sx+hm,headY,sw*0.07,headH*0.32);
 
-            // Face
-            ctx.fillStyle = c(skR,skG,skB);
-            ctx.fillRect(sx+hm, headY+headH*0.30, sw-hm*2, headH*0.70);
-            // Ear bumps
-            ctx.fillStyle = c(skR-14,skG-14,skB-10);
-            ctx.fillRect(sx+hm-3, headY+headH*0.44, Math.max(2,sw*0.05), headH*0.28);
-            ctx.fillRect(sx+sw-hm-1, headY+headH*0.44, Math.max(2,sw*0.05), headH*0.28);
-            // Brow shadow
-            ctx.fillStyle = c(skR-22,skG-22,skB-16);
-            ctx.fillRect(sx+hm, headY+headH*0.44, sw-hm*2, headH*0.09);
-            // Eyes (shadow socket + dark iris)
-            const eyeW=Math.max(1,(sw-hm*2)*0.20), eyeH=Math.max(1,headH*0.14);
-            const eyeY=headY+headH*0.52;
-            ctx.fillStyle = c(skR-38,skG-38,skB-28);
-            ctx.fillRect(sx+hm+(sw-hm*2)*0.10, eyeY, eyeW, eyeH);
-            ctx.fillRect(sx+hm+(sw-hm*2)*0.58, eyeY, eyeW, eyeH);
-            ctx.fillStyle = c(18,14,10);
-            ctx.fillRect(sx+hm+(sw-hm*2)*0.13, eyeY+1, eyeW*0.6, eyeH*0.65);
-            ctx.fillRect(sx+hm+(sw-hm*2)*0.61, eyeY+1, eyeW*0.6, eyeH*0.65);
-            // Nose bridge
-            ctx.fillStyle = c(skR-20,skG-22,skB-16);
-            ctx.fillRect(sx+sw/2-1, eyeY+eyeH, Math.max(1,sw*0.03), headH*0.13);
-            // Mouth
-            ctx.fillStyle = c(skR-32,skG-42,skB-36);
-            ctx.fillRect(sx+hm+(sw-hm*2)*0.30, headY+headH*0.80, (sw-hm*2)*0.40, Math.max(1,headH*0.07));
-            // Jaw / chin shadow
-            ctx.fillStyle = c(skR-14,skG-16,skB-12);
-            ctx.fillRect(sx+hm, headY+headH*0.88, sw-hm*2, headH*0.12);
-
-            // Neck + white collar
-            ctx.fillStyle = c(skR-10,skG-10,skB-8);
-            ctx.fillRect(sx+nm, neckY, sw-nm*2, neckH);
-            ctx.fillStyle = c(shR,shG,shB);
-            ctx.fillRect(sx+nm-2, neckY, sw-nm*2+4, neckH*0.55);
-
-            // Jacket body
-            ctx.fillStyle = c(jkR,jkG,jkB);
-            ctx.fillRect(sx+bm, torsoY, sw-bm*2, torsoH);
-            // White shirt visible in jacket V — tapering strips
-            for (let row=0;row<12;row++){
-                const t=row/12;
-                const vw=sw*0.09 + (sw*0.30-sw*0.09)*t;
-                ctx.fillStyle = c(shR,shG,shB);
-                ctx.fillRect(sx+sw/2-vw/2, torsoY+torsoH*0.04+row*torsoH*0.08, vw, torsoH*0.08+1);
+            if (showBack) {
+                // Back of head
+                ctx.fillStyle=c(skR-12,skG-12,skB-10); ctx.fillRect(sx+hm,headY+headH*0.30,sw-hm*2,headH*0.70);
+                ctx.fillStyle=c(skR-20,skG-20,skB-15);
+                ctx.fillRect(sx+hm-3,headY+headH*0.44,Math.max(2,sw*0.05),headH*0.28);
+                ctx.fillRect(sx+sw-hm-1,headY+headH*0.44,Math.max(2,sw*0.05),headH*0.28);
+                // Neck
+                ctx.fillStyle=c(skR-12,skG-12,skB-10); ctx.fillRect(sx+nm,neckY,sw-nm*2,neckH);
+                // White collar at back of neck
+                ctx.fillStyle=c(shR,shG,shB); ctx.fillRect(sx+nm-2,torsoY,sw-nm*2+4,torsoH*0.06);
+                // Back of jacket
+                ctx.fillStyle=c(jkR,jkG,jkB); ctx.fillRect(sx+bm,torsoY,sw-bm*2,torsoH);
+                // Back seam
+                ctx.fillStyle=c(jkR-6,jkG-6,jkB-5); ctx.fillRect(sx+sw/2-1,torsoY+torsoH*0.08,2,torsoH*0.90);
+                // Shoulder blade highlights
+                ctx.fillStyle=c(jkR+8,jkG+8,jkB+12);
+                ctx.fillRect(sx+bm+2,torsoY+torsoH*0.06,sw*0.28,torsoH*0.34);
+                ctx.fillRect(sx+sw-bm-2-sw*0.28,torsoY+torsoH*0.06,sw*0.28,torsoH*0.34);
+                // Arms (back — highlight on back edge)
+                ctx.fillStyle=c(jkR,jkG,jkB);
+                ctx.fillRect(sx,torsoY+torsoH*0.04,aw,torsoH*0.76);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.04,aw,torsoH*0.76);
+                ctx.fillStyle=c(jkR+8,jkG+8,jkB+10);
+                ctx.fillRect(sx+aw-Math.max(1,aw*0.3),torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.70);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.70);
+                ctx.fillStyle=c(shR,shG,shB);
+                ctx.fillRect(sx,torsoY+torsoH*0.76,aw,torsoH*0.10);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.76,aw,torsoH*0.10);
+                ctx.fillStyle=c(skR-10,skG-10,skB-8);
+                ctx.fillRect(sx,torsoY+torsoH*0.86,aw,torsoH*0.14);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.86,aw,torsoH*0.14);
+            } else {
+                // Front face
+                ctx.fillStyle=c(skR,skG,skB); ctx.fillRect(sx+hm,headY+headH*0.30,sw-hm*2,headH*0.70);
+                ctx.fillStyle=c(skR-14,skG-14,skB-10);
+                ctx.fillRect(sx+hm-3,headY+headH*0.44,Math.max(2,sw*0.05),headH*0.28);
+                ctx.fillRect(sx+sw-hm-1,headY+headH*0.44,Math.max(2,sw*0.05),headH*0.28);
+                ctx.fillStyle=c(skR-22,skG-22,skB-16); ctx.fillRect(sx+hm,headY+headH*0.44,sw-hm*2,headH*0.09);
+                const eyeW=Math.max(1,(sw-hm*2)*0.20),eyeH=Math.max(1,headH*0.14),eyeY=headY+headH*0.52;
+                ctx.fillStyle=c(skR-38,skG-38,skB-28);
+                ctx.fillRect(sx+hm+(sw-hm*2)*0.10,eyeY,eyeW,eyeH);
+                ctx.fillRect(sx+hm+(sw-hm*2)*0.58,eyeY,eyeW,eyeH);
+                ctx.fillStyle=c(18,14,10);
+                ctx.fillRect(sx+hm+(sw-hm*2)*0.13,eyeY+1,eyeW*0.6,eyeH*0.65);
+                ctx.fillRect(sx+hm+(sw-hm*2)*0.61,eyeY+1,eyeW*0.6,eyeH*0.65);
+                ctx.fillStyle=c(skR-20,skG-22,skB-16); ctx.fillRect(sx+sw/2-1,eyeY+eyeH,Math.max(1,sw*0.03),headH*0.13);
+                ctx.fillStyle=c(skR-32,skG-42,skB-36); ctx.fillRect(sx+hm+(sw-hm*2)*0.30,headY+headH*0.80,(sw-hm*2)*0.40,Math.max(1,headH*0.07));
+                ctx.fillStyle=c(skR-14,skG-16,skB-12); ctx.fillRect(sx+hm,headY+headH*0.88,sw-hm*2,headH*0.12);
+                // Neck + collar
+                ctx.fillStyle=c(skR-10,skG-10,skB-8); ctx.fillRect(sx+nm,neckY,sw-nm*2,neckH);
+                ctx.fillStyle=c(shR,shG,shB); ctx.fillRect(sx+nm-2,neckY,sw-nm*2+4,neckH*0.55);
+                // Jacket + shirt V
+                ctx.fillStyle=c(jkR,jkG,jkB); ctx.fillRect(sx+bm,torsoY,sw-bm*2,torsoH);
+                for (let row=0;row<12;row++){
+                    const vw=sw*0.09+(sw*0.30-sw*0.09)*(row/12);
+                    ctx.fillStyle=c(shR,shG,shB);
+                    ctx.fillRect(sx+sw/2-vw/2,torsoY+torsoH*0.04+row*torsoH*0.08,vw,torsoH*0.08+1);
+                }
+                ctx.fillStyle=c(18,14,14); ctx.fillRect(sx+sw/2-sw*0.09,torsoY+torsoH*0.04,sw*0.18,torsoH*0.07);
+                ctx.fillStyle=c(35,28,28); ctx.fillRect(sx+sw/2-sw*0.02,torsoY+torsoH*0.04,sw*0.04,torsoH*0.07);
+                ctx.fillStyle=c(jkR+10,jkG+10,jkB+14);
+                ctx.fillRect(sx+bm,torsoY,sw*0.26,torsoH*0.50);
+                ctx.fillRect(sx+sw-bm-sw*0.26,torsoY,sw*0.26,torsoH*0.50);
+                ctx.fillStyle=c(jkR-5,jkG-5,jkB-4); ctx.fillRect(sx+sw/2-1,torsoY+torsoH*0.50,2,torsoH*0.50);
+                ctx.fillStyle=c(shR-10,shG-10,shB-10); ctx.fillRect(sx+sw/2-1,torsoY+torsoH*0.62,Math.max(1,sw*0.04),Math.max(1,sw*0.04));
+                // Arms
+                ctx.fillStyle=c(jkR,jkG,jkB);
+                ctx.fillRect(sx,torsoY+torsoH*0.04,aw,torsoH*0.76);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.04,aw,torsoH*0.76);
+                ctx.fillStyle=c(jkR+8,jkG+8,jkB+10);
+                ctx.fillRect(sx+1,torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.70);
+                ctx.fillRect(sx+sw-aw+1,torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.70);
+                ctx.fillStyle=c(shR,shG,shB);
+                ctx.fillRect(sx,torsoY+torsoH*0.76,aw,torsoH*0.10);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.76,aw,torsoH*0.10);
+                ctx.fillStyle=c(skR,skG,skB);
+                ctx.fillRect(sx,torsoY+torsoH*0.86,aw,torsoH*0.14);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.86,aw,torsoH*0.14);
+                ctx.fillStyle=c(skR-16,skG-16,skB-12);
+                ctx.fillRect(sx,torsoY+torsoH*0.94,aw,torsoH*0.06);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.94,aw,torsoH*0.06);
+                // Gun in right hand (left from viewer)
+                npcGun(sx+aw*0.05, torsoY+torsoH*0.68);
             }
-            // Bow tie
-            ctx.fillStyle = c(18,14,14);
-            ctx.fillRect(sx+sw/2-sw*0.09, torsoY+torsoH*0.04, sw*0.18, torsoH*0.07);
-            ctx.fillStyle = c(35,28,28);
-            ctx.fillRect(sx+sw/2-sw*0.02, torsoY+torsoH*0.04, sw*0.04, torsoH*0.07); // knot
-            // Left lapel (slightly lighter than jacket)
-            ctx.fillStyle = c(jkR+10,jkG+10,jkB+14);
-            ctx.fillRect(sx+bm, torsoY, sw*0.26, torsoH*0.50);
-            // Right lapel
-            ctx.fillRect(sx+sw-bm-sw*0.26, torsoY, sw*0.26, torsoH*0.50);
-            // Jacket seam shadow
-            ctx.fillStyle = c(jkR-5,jkG-5,jkB-4);
-            ctx.fillRect(sx+sw/2-1, torsoY+torsoH*0.50, 2, torsoH*0.50);
-            // Jacket button
-            ctx.fillStyle = c(shR-10,shG-10,shB-10);
-            ctx.fillRect(sx+sw/2-1, torsoY+torsoH*0.62, Math.max(1,sw*0.04), Math.max(1,sw*0.04));
 
-            // Arms (jacket)
-            ctx.fillStyle = c(jkR,jkG,jkB);
-            ctx.fillRect(sx, torsoY+torsoH*0.04, aw, torsoH*0.76);
-            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.04, aw, torsoH*0.76);
-            // Arm highlight (lighter front edge)
-            ctx.fillStyle = c(jkR+8,jkG+8,jkB+10);
-            ctx.fillRect(sx+1, torsoY+torsoH*0.06, Math.max(1,aw*0.3), torsoH*0.70);
-            ctx.fillRect(sx+sw-aw+1, torsoY+torsoH*0.06, Math.max(1,aw*0.3), torsoH*0.70);
-            // White shirt cuffs
-            ctx.fillStyle = c(shR,shG,shB);
-            ctx.fillRect(sx, torsoY+torsoH*0.76, aw, torsoH*0.10);
-            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.76, aw, torsoH*0.10);
-            // Hands (fists)
-            ctx.fillStyle = c(skR,skG,skB);
-            ctx.fillRect(sx, torsoY+torsoH*0.86, aw, torsoH*0.14);
-            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.86, aw, torsoH*0.14);
-            ctx.fillStyle = c(skR-16,skG-16,skB-12);
-            ctx.fillRect(sx, torsoY+torsoH*0.94, aw, torsoH*0.06);
-            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.94, aw, torsoH*0.06);
-
-            // Trousers
-            ctx.fillStyle = c(ptR,ptG,ptB);
-            ctx.fillRect(llx, legY, lw, legH);
-            ctx.fillRect(lrx, legY, lw, legH);
-            ctx.fillStyle = c(ptR-6,ptG-6,ptB-4);
-            ctx.fillRect(llx+lw*0.5, legY, Math.max(1,lw*0.08), legH);
-            ctx.fillRect(lrx+lw*0.5, legY, Math.max(1,lw*0.08), legH);
-
-            // Shoes (wide, polished black)
-            ctx.fillStyle = c(14,12,14);
-            ctx.fillRect(llx-2, bootY, lw+5, bootH*0.55);
-            ctx.fillRect(lrx-2, bootY, lw+5, bootH*0.55);
-            ctx.fillRect(llx-2, bootY+bootH*0.55, lw+6, bootH*0.45);
-            ctx.fillRect(lrx-2, bootY+bootH*0.55, lw+6, bootH*0.45);
-            // Shoe highlight (polished sheen)
-            ctx.fillStyle = c(42,38,42);
-            ctx.fillRect(llx, bootY+1, lw+1, bootH*0.18);
-            ctx.fillRect(lrx, bootY+1, lw+1, bootH*0.18);
+            // Trousers (shared)
+            ctx.fillStyle=c(ptR,ptG,ptB);
+            ctx.fillRect(llx,legY,lw,legH); ctx.fillRect(lrx,legY,lw,legH);
+            ctx.fillStyle=c(ptR-6,ptG-6,ptB-4);
+            ctx.fillRect(llx+lw*0.5,legY,Math.max(1,lw*0.08),legH);
+            ctx.fillRect(lrx+lw*0.5,legY,Math.max(1,lw*0.08),legH);
+            // Shoes
+            ctx.fillStyle=c(14,12,14);
+            ctx.fillRect(llx-2,bootY,lw+(showBack?3:5),bootH*0.55);
+            ctx.fillRect(lrx-2,bootY,lw+(showBack?3:5),bootH*0.55);
+            ctx.fillRect(llx-2,bootY+bootH*0.55,lw+(showBack?4:6),bootH*0.45);
+            ctx.fillRect(lrx-2,bootY+bootH*0.55,lw+(showBack?4:6),bootH*0.45);
+            ctx.fillStyle=c(42,38,42);
+            ctx.fillRect(llx,bootY+1,lw+1,bootH*0.18); ctx.fillRect(lrx,bootY+1,lw+1,bootH*0.18);
 
         } else {
-            // === MILITARY SOLDIER (olive uniform + helmet) ===
+            // === MILITARY SOLDIER ===
             const skR=202,skG=162,skB=120;
-            const unR=72, unG=84, unB=48;   // olive uniform
-            const ptR=58, ptG=68, ptB=38;   // darker olive trousers
-            const btR=40, btG=30, btB=18;   // dark brown boots
-            const hlR=55, hlG=66, hlB=34;   // helmet
+            const unR=72, unG=84, unB=48;
+            const ptR=58, ptG=68, ptB=38;
+            const btR=40, btG=30, btB=18;
+            const hlR=55, hlG=66, hlB=34;
 
-            // Helmet
-            ctx.fillStyle = c(hlR,hlG,hlB);
-            ctx.fillRect(sx+hm-4, headY, sw-hm*2+8, headH*0.38);
-            // Helmet top ridge
-            ctx.fillStyle = c(hlR-8,hlG-8,hlB-5);
-            ctx.fillRect(sx+hm-2, headY, sw-hm*2+4, headH*0.08);
-            // Helmet brim overhang
-            ctx.fillStyle = c(hlR-10,hlG-10,hlB-6);
-            ctx.fillRect(sx+hm-6, headY+headH*0.32, sw-hm*2+12, headH*0.10);
-            // Helmet shade
-            ctx.fillStyle = c(hlR+10,hlG+12,hlB+6);
-            ctx.fillRect(sx+hm, headY+headH*0.04, sw*0.08, headH*0.22);
+            // Helmet (shared front/back structure)
+            ctx.fillStyle=c(hlR,hlG,hlB); ctx.fillRect(sx+hm-4,headY,sw-hm*2+8,headH*0.38);
+            ctx.fillStyle=c(hlR-8,hlG-8,hlB-5); ctx.fillRect(sx+hm-2,headY,sw-hm*2+4,headH*0.08);
+            ctx.fillStyle=c(hlR-10,hlG-10,hlB-6); ctx.fillRect(sx+hm-6,headY+headH*0.32,sw-hm*2+12,headH*0.10);
 
-            // Face
-            ctx.fillStyle = c(skR,skG,skB);
-            ctx.fillRect(sx+hm, headY+headH*0.36, sw-hm*2, headH*0.64);
-            // Ear bumps
-            ctx.fillStyle = c(skR-14,skG-14,skB-10);
-            ctx.fillRect(sx+hm-3, headY+headH*0.46, Math.max(2,sw*0.05), headH*0.26);
-            ctx.fillRect(sx+sw-hm-1, headY+headH*0.46, Math.max(2,sw*0.05), headH*0.26);
-            // Brow shadow
-            ctx.fillStyle = c(skR-18,skG-20,skB-14);
-            ctx.fillRect(sx+hm, headY+headH*0.44, sw-hm*2, headH*0.08);
-            // Eyes
-            const eyeW2=Math.max(1,(sw-hm*2)*0.20), eyeH2=Math.max(1,headH*0.13);
-            const eyeY2=headY+headH*0.52;
-            ctx.fillStyle = c(skR-35,skG-35,skB-25);
-            ctx.fillRect(sx+hm+(sw-hm*2)*0.10, eyeY2, eyeW2, eyeH2);
-            ctx.fillRect(sx+hm+(sw-hm*2)*0.58, eyeY2, eyeW2, eyeH2);
-            ctx.fillStyle = c(20,16,10);
-            ctx.fillRect(sx+hm+(sw-hm*2)*0.13, eyeY2+1, eyeW2*0.6, eyeH2*0.65);
-            ctx.fillRect(sx+hm+(sw-hm*2)*0.61, eyeY2+1, eyeW2*0.6, eyeH2*0.65);
-            // Nose
-            ctx.fillStyle = c(skR-20,skG-22,skB-16);
-            ctx.fillRect(sx+sw/2-1, eyeY2+eyeH2, Math.max(1,sw*0.03), headH*0.12);
-            // Mouth
-            ctx.fillStyle = c(skR-30,skG-40,skB-32);
-            ctx.fillRect(sx+hm+(sw-hm*2)*0.30, headY+headH*0.79, (sw-hm*2)*0.40, Math.max(1,headH*0.07));
-            // Chin shadow
-            ctx.fillStyle = c(skR-12,skG-14,skB-10);
-            ctx.fillRect(sx+hm, headY+headH*0.88, sw-hm*2, headH*0.12);
+            if (showBack) {
+                // Helmet back highlight
+                ctx.fillStyle=c(hlR+6,hlG+7,hlB+4); ctx.fillRect(sx+sw-hm-sw*0.08,headY+headH*0.04,sw*0.08,headH*0.22);
+                // Back of head
+                ctx.fillStyle=c(skR-12,skG-12,skB-10); ctx.fillRect(sx+hm,headY+headH*0.36,sw-hm*2,headH*0.64);
+                ctx.fillStyle=c(skR-20,skG-20,skB-15);
+                ctx.fillRect(sx+hm-3,headY+headH*0.48,Math.max(2,sw*0.05),headH*0.26);
+                ctx.fillRect(sx+sw-hm-1,headY+headH*0.48,Math.max(2,sw*0.05),headH*0.26);
+                ctx.fillStyle=c(skR-12,skG-12,skB-10); ctx.fillRect(sx+nm,neckY,sw-nm*2,neckH);
+                // Back of uniform
+                ctx.fillStyle=c(unR,unG,unB); ctx.fillRect(sx+bm,torsoY,sw-bm*2,torsoH);
+                ctx.fillStyle=c(unR-10,unG-10,unB-6); ctx.fillRect(sx+bm,torsoY,sw-bm*2,torsoH*0.09);
+                ctx.fillStyle=c(unR-12,unG-12,unB-8); ctx.fillRect(sx+sw/2-1,torsoY+torsoH*0.08,2,torsoH*0.80);
+                // Shoulder blades
+                ctx.fillStyle=c(unR+7,unG+7,unB+5);
+                ctx.fillRect(sx+bm+2,torsoY+torsoH*0.10,sw*0.26,torsoH*0.32);
+                ctx.fillRect(sx+sw-bm-2-sw*0.26,torsoY+torsoH*0.10,sw*0.26,torsoH*0.32);
+                // Belt back
+                ctx.fillStyle=c(42,32,18); ctx.fillRect(sx+bm,torsoY+torsoH*0.87,sw-bm*2,torsoH*0.14);
+                // Arms (back)
+                ctx.fillStyle=c(unR,unG,unB);
+                ctx.fillRect(sx,torsoY+torsoH*0.04,aw,torsoH*0.84);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.04,aw,torsoH*0.84);
+                ctx.fillStyle=c(unR+8,unG+8,unB+5);
+                ctx.fillRect(sx+aw-Math.max(1,aw*0.3),torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.76);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.76);
+                ctx.fillStyle=c(unR-16,unG-16,unB-10);
+                ctx.fillRect(sx,torsoY+torsoH*0.80,aw,torsoH*0.08);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.80,aw,torsoH*0.08);
+                ctx.fillStyle=c(skR-10,skG-10,skB-8);
+                ctx.fillRect(sx,torsoY+torsoH*0.86,aw,torsoH*0.14);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.86,aw,torsoH*0.14);
+            } else {
+                // Helmet front highlight
+                ctx.fillStyle=c(hlR+10,hlG+12,hlB+6); ctx.fillRect(sx+hm,headY+headH*0.04,sw*0.08,headH*0.22);
+                // Front face
+                ctx.fillStyle=c(skR,skG,skB); ctx.fillRect(sx+hm,headY+headH*0.36,sw-hm*2,headH*0.64);
+                ctx.fillStyle=c(skR-14,skG-14,skB-10);
+                ctx.fillRect(sx+hm-3,headY+headH*0.46,Math.max(2,sw*0.05),headH*0.26);
+                ctx.fillRect(sx+sw-hm-1,headY+headH*0.46,Math.max(2,sw*0.05),headH*0.26);
+                ctx.fillStyle=c(skR-18,skG-20,skB-14); ctx.fillRect(sx+hm,headY+headH*0.44,sw-hm*2,headH*0.08);
+                const eyeW2=Math.max(1,(sw-hm*2)*0.20),eyeH2=Math.max(1,headH*0.13),eyeY2=headY+headH*0.52;
+                ctx.fillStyle=c(skR-35,skG-35,skB-25);
+                ctx.fillRect(sx+hm+(sw-hm*2)*0.10,eyeY2,eyeW2,eyeH2);
+                ctx.fillRect(sx+hm+(sw-hm*2)*0.58,eyeY2,eyeW2,eyeH2);
+                ctx.fillStyle=c(20,16,10);
+                ctx.fillRect(sx+hm+(sw-hm*2)*0.13,eyeY2+1,eyeW2*0.6,eyeH2*0.65);
+                ctx.fillRect(sx+hm+(sw-hm*2)*0.61,eyeY2+1,eyeW2*0.6,eyeH2*0.65);
+                ctx.fillStyle=c(skR-20,skG-22,skB-16); ctx.fillRect(sx+sw/2-1,eyeY2+eyeH2,Math.max(1,sw*0.03),headH*0.12);
+                ctx.fillStyle=c(skR-30,skG-40,skB-32); ctx.fillRect(sx+hm+(sw-hm*2)*0.30,headY+headH*0.79,(sw-hm*2)*0.40,Math.max(1,headH*0.07));
+                ctx.fillStyle=c(skR-12,skG-14,skB-10); ctx.fillRect(sx+hm,headY+headH*0.88,sw-hm*2,headH*0.12);
+                ctx.fillStyle=c(skR-10,skG-10,skB-8); ctx.fillRect(sx+nm,neckY,sw-nm*2,neckH);
+                // Uniform jacket
+                ctx.fillStyle=c(unR,unG,unB); ctx.fillRect(sx+bm,torsoY,sw-bm*2,torsoH);
+                ctx.fillStyle=c(unR-10,unG-10,unB-6); ctx.fillRect(sx+bm,torsoY,sw-bm*2,torsoH*0.11);
+                ctx.fillStyle=c(unR-12,unG-12,unB-8); ctx.fillRect(sx+sw/2-1,torsoY,2,torsoH*0.88);
+                ctx.fillStyle=c(unR-10,unG-10,unB-6); ctx.fillRect(sx+bm+2,torsoY+torsoH*0.22,sw*0.21,torsoH*0.19);
+                ctx.fillStyle=c(unR+6,unG+6,unB+4); ctx.fillRect(sx+bm+2,torsoY+torsoH*0.22,sw*0.21,torsoH*0.04);
+                ctx.fillStyle=c(unR-14,unG-14,unB-8);
+                ctx.fillRect(sx+bm,torsoY+torsoH*0.02,sw*0.18,torsoH*0.08);
+                ctx.fillRect(sx+sw-bm-sw*0.18,torsoY+torsoH*0.02,sw*0.18,torsoH*0.08);
+                ctx.fillStyle=c(42,32,18); ctx.fillRect(sx+bm,torsoY+torsoH*0.87,sw-bm*2,torsoH*0.14);
+                ctx.fillStyle=c(88,72,38); ctx.fillRect(sx+sw/2-sw*0.04,torsoY+torsoH*0.87,sw*0.08,torsoH*0.14);
+                ctx.fillStyle=c(55,44,22); ctx.fillRect(sx+sw/2-sw*0.015,torsoY+torsoH*0.89,sw*0.03,torsoH*0.10);
+                // Arms
+                ctx.fillStyle=c(unR,unG,unB);
+                ctx.fillRect(sx,torsoY+torsoH*0.04,aw,torsoH*0.84);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.04,aw,torsoH*0.84);
+                ctx.fillStyle=c(unR+8,unG+8,unB+5);
+                ctx.fillRect(sx+1,torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.76);
+                ctx.fillRect(sx+sw-aw+1,torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.76);
+                ctx.fillStyle=c(unR-16,unG-16,unB-10);
+                ctx.fillRect(sx,torsoY+torsoH*0.80,aw,torsoH*0.08);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.80,aw,torsoH*0.08);
+                ctx.fillStyle=c(skR,skG,skB);
+                ctx.fillRect(sx,torsoY+torsoH*0.86,aw,torsoH*0.14);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.86,aw,torsoH*0.14);
+                ctx.fillStyle=c(skR-16,skG-16,skB-12);
+                ctx.fillRect(sx,torsoY+torsoH*0.94,aw,torsoH*0.06);
+                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.94,aw,torsoH*0.06);
+                // Gun in right hand
+                npcGun(sx+aw*0.05, torsoY+torsoH*0.68);
+            }
 
-            // Neck
-            ctx.fillStyle = c(skR-10,skG-10,skB-8);
-            ctx.fillRect(sx+nm, neckY, sw-nm*2, neckH);
-
-            // Jacket body
-            ctx.fillStyle = c(unR,unG,unB);
-            ctx.fillRect(sx+bm, torsoY, sw-bm*2, torsoH);
-            // Collar (darker)
-            ctx.fillStyle = c(unR-10,unG-10,unB-6);
-            ctx.fillRect(sx+bm, torsoY, sw-bm*2, torsoH*0.11);
-            // Centre seam
-            ctx.fillStyle = c(unR-12,unG-12,unB-8);
-            ctx.fillRect(sx+sw/2-1, torsoY, 2, torsoH*0.88);
-            // Chest pocket (left breast)
-            ctx.fillStyle = c(unR-10,unG-10,unB-6);
-            ctx.fillRect(sx+bm+2, torsoY+torsoH*0.22, sw*0.21, torsoH*0.19);
-            ctx.fillStyle = c(unR+6,unG+6,unB+4);
-            ctx.fillRect(sx+bm+2, torsoY+torsoH*0.22, sw*0.21, torsoH*0.04);
-            // Shoulder epaulette lines
-            ctx.fillStyle = c(unR-14,unG-14,unB-8);
-            ctx.fillRect(sx+bm, torsoY+torsoH*0.02, sw*0.18, torsoH*0.08);
-            ctx.fillRect(sx+sw-bm-sw*0.18, torsoY+torsoH*0.02, sw*0.18, torsoH*0.08);
-            // Belt
-            ctx.fillStyle = c(42,32,18);
-            ctx.fillRect(sx+bm, torsoY+torsoH*0.87, sw-bm*2, torsoH*0.14);
-            ctx.fillStyle = c(88,72,38);
-            ctx.fillRect(sx+sw/2-sw*0.04, torsoY+torsoH*0.87, sw*0.08, torsoH*0.14); // buckle
-            ctx.fillStyle = c(55,44,22);
-            ctx.fillRect(sx+sw/2-sw*0.015, torsoY+torsoH*0.89, sw*0.03, torsoH*0.10); // buckle slot
-
-            // Arms
-            ctx.fillStyle = c(unR,unG,unB);
-            ctx.fillRect(sx, torsoY+torsoH*0.04, aw, torsoH*0.84);
-            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.04, aw, torsoH*0.84);
-            // Arm highlight
-            ctx.fillStyle = c(unR+8,unG+8,unB+5);
-            ctx.fillRect(sx+1, torsoY+torsoH*0.06, Math.max(1,aw*0.3), torsoH*0.76);
-            ctx.fillRect(sx+sw-aw+1, torsoY+torsoH*0.06, Math.max(1,aw*0.3), torsoH*0.76);
-            // Cuff stripe
-            ctx.fillStyle = c(unR-16,unG-16,unB-10);
-            ctx.fillRect(sx, torsoY+torsoH*0.80, aw, torsoH*0.08);
-            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.80, aw, torsoH*0.08);
-            // Hands
-            ctx.fillStyle = c(skR,skG,skB);
-            ctx.fillRect(sx, torsoY+torsoH*0.86, aw, torsoH*0.14);
-            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.86, aw, torsoH*0.14);
-            ctx.fillStyle = c(skR-16,skG-16,skB-12);
-            ctx.fillRect(sx, torsoY+torsoH*0.94, aw, torsoH*0.06);
-            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.94, aw, torsoH*0.06);
-
-            // Trousers
-            ctx.fillStyle = c(ptR,ptG,ptB);
-            ctx.fillRect(llx, legY, lw, legH);
-            ctx.fillRect(lrx, legY, lw, legH);
-            ctx.fillStyle = c(ptR-8,ptG-8,ptB-5);
-            ctx.fillRect(llx+lw*0.5, legY, Math.max(1,lw*0.08), legH);
-            ctx.fillRect(lrx+lw*0.5, legY, Math.max(1,lw*0.08), legH);
-
-            // Boots
-            ctx.fillStyle = c(btR,btG,btB);
-            ctx.fillRect(llx-1, bootY, lw+2, bootH);
-            ctx.fillRect(lrx-1, bootY, lw+2, bootH);
-            ctx.fillStyle = c(btR+16,btG+12,btB+8);
-            ctx.fillRect(llx, bootY+1, lw, bootH*0.24);
-            ctx.fillRect(lrx, bootY+1, lw, bootH*0.24);
-            ctx.fillStyle = c(btR-5,btG-5,btB-3);
-            ctx.fillRect(llx-1, bootY+bootH*0.65, lw+3, bootH*0.35);
-            ctx.fillRect(lrx-1, bootY+bootH*0.65, lw+3, bootH*0.35);
+            // Trousers (shared)
+            ctx.fillStyle=c(ptR,ptG,ptB);
+            ctx.fillRect(llx,legY,lw,legH); ctx.fillRect(lrx,legY,lw,legH);
+            ctx.fillStyle=c(ptR-8,ptG-8,ptB-5);
+            ctx.fillRect(llx+lw*0.5,legY,Math.max(1,lw*0.08),legH);
+            ctx.fillRect(lrx+lw*0.5,legY,Math.max(1,lw*0.08),legH);
+            // Boots (shared)
+            ctx.fillStyle=c(btR,btG,btB);
+            ctx.fillRect(llx-1,bootY,lw+2,bootH); ctx.fillRect(lrx-1,bootY,lw+2,bootH);
+            ctx.fillStyle=c(btR+16,btG+12,btB+8);
+            ctx.fillRect(llx,bootY+1,lw,bootH*0.24); ctx.fillRect(lrx,bootY+1,lw,bootH*0.24);
+            ctx.fillStyle=c(btR-5,btG-5,btB-3);
+            ctx.fillRect(llx-1,bootY+bootH*0.65,lw+3,bootH*0.35);
+            ctx.fillRect(lrx-1,bootY+bootH*0.65,lw+3,bootH*0.35);
         }
     }
 
@@ -1104,7 +1102,8 @@
                 closest.active = false;
                 closest.state = 'dead';
             } else {
-                closest.state = 'alert';
+                closest.state = 'flee';
+                closest.fleeTimer = 0;
             }
         }
     }
@@ -1164,6 +1163,13 @@
                         moveToward(e, player.x, player.y, CHASE_SPEED);
                     }
                 }
+            } else if (e.state === 'flee') {
+                e.fleeTimer = (e.fleeTimer || 0) + 1;
+                // Run directly away from player
+                const fleeX = e.x - (dx / dist) * CS * 4;
+                const fleeY = e.y - (dy / dist) * CS * 4;
+                moveToward(e, fleeX, fleeY, CHASE_SPEED * 1.3);
+                if (e.fleeTimer > 150) { e.state = 'alert'; e.fleeTimer = 0; }
             } else if (e.state === 'shoot') {
                 if (!los || dist > SHOOT_DIST * 1.3) {
                     e.state = 'alert';
