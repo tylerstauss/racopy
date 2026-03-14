@@ -462,18 +462,21 @@
                     const sD = wSide[x] ? 0.68 : 1.0;
                     let r, g, b;
                     if (wTile[x] === 1) {
-                        // Gray stone with alternating masonry offset
+                        // Two-toned masonry: grey top → green bottom with gradient
                         const byI = Math.floor(wallY * 3);
                         const bxR = wx * 4 + (byI % 2 === 0 ? 0 : 0.5);
                         const bxI = Math.floor(bxR);
                         const bxF = bxR - bxI, byF = wallY * 3 - byI;
                         const grout = bxF < 0.07 || bxF > 0.93 || byF < 0.065 || byF > 0.935;
                         if (grout) {
-                            r = 28; g = 26; b = 24;
+                            r = 22; g = 24; b = 20;
                         } else {
                             const h = ((bxI * 73856093) ^ (byI * 19349663) ^ (wMX[x] * 5765169) ^ (wMY[x] * 2341253)) & 0xFF;
-                            const base = 100 + Math.round((h / 255) * 50);
-                            r = Math.round(base * 0.97); g = Math.round(base * 0.93); b = Math.round(base * 0.87);
+                            const n = (h / 255) * 24 - 12;
+                            // Lerp: wallY=0 (top) = grey, wallY=1 (bottom) = green
+                            r = Math.round(116 + (52  - 116) * wallY + n * 0.5);
+                            g = Math.round(113 + (94  - 113) * wallY + n * 0.4);
+                            b = Math.round(107 + (42  - 107) * wallY + n * 0.2);
                         }
                     } else {
                         // Bookshelf — colored spines
@@ -495,19 +498,20 @@
                     data[pidx+2] = Math.round(b * s);
 
                 } else if (isFloor) {
-                    // FLOOR — GoldenEye beige stone tiles with grout lines
-                    const tX = fx - Math.floor(fx);
-                    const tY = fy - Math.floor(fy);
-                    if (tX < 0.055 || tX > 0.945 || tY < 0.055 || tY > 0.945) {
-                        data[pidx]   = Math.round(112 * fShade);
-                        data[pidx+1] = Math.round(102 * fShade);
-                        data[pidx+2] = Math.round(82  * fShade);
+                    // FLOOR — GoldenEye beige stone tiles with grout lines (small tiles)
+                    const tfx = fx * 4, tfy = fy * 4;
+                    const tX = tfx - Math.floor(tfx);
+                    const tY = tfy - Math.floor(tfy);
+                    if (tX < 0.07 || tX > 0.93 || tY < 0.07 || tY > 0.93) {
+                        data[pidx]   = Math.round(95  * fShade);
+                        data[pidx+1] = Math.round(88  * fShade);
+                        data[pidx+2] = Math.round(72  * fShade);
                     } else {
-                        const h = ((Math.floor(fx) * 73856093) ^ (Math.floor(fy) * 19349663)) & 0xFF;
-                        const base = 168 + Math.round((h / 255) * 26);
+                        const h = ((Math.floor(tfx) * 73856093) ^ (Math.floor(tfy) * 19349663)) & 0xFF;
+                        const base = 162 + Math.round((h / 255) * 24);
                         data[pidx]   = Math.round(base       * fShade);
-                        data[pidx+1] = Math.round((base - 13) * fShade);
-                        data[pidx+2] = Math.round((base - 37) * fShade);
+                        data[pidx+1] = Math.round((base - 12) * fShade);
+                        data[pidx+2] = Math.round((base - 34) * fShade);
                     }
 
                 } else {
@@ -589,67 +593,263 @@
 
     function drawHumanFigure(sx, sy, sw, sh, shade, type) {
         const s = shade;
-        const skin    = `rgb(${Math.round(218*s)},${Math.round(172*s)},${Math.round(132*s)})`;
-        const hair    = `rgb(${Math.round(75*s)},${Math.round(52*s)},${Math.round(28*s)})`;
-        const uniform = type === 0
-            ? `rgb(${Math.round(185*s)},${Math.round(50*s)},${Math.round(50*s)})`
-            : `rgb(${Math.round(50*s)},${Math.round(135*s)},${Math.round(50*s)})`;
-        const pants   = `rgb(${Math.round(42*s)},${Math.round(42*s)},${Math.round(55*s)})`;
-        const boot    = `rgb(${Math.round(28*s)},${Math.round(20*s)},${Math.round(14*s)})`;
+        const c = (r, g, b) => `rgb(${Math.round(r*s)},${Math.round(g*s)},${Math.round(b*s)})`;
 
-        // Vertical sections
-        const headH  = sh * 0.18;
-        const neckH  = sh * 0.04;
-        const torsoH = sh * 0.32;
-        const legH   = sh * 0.46;
-        const neckY  = sy + headH;
+        // Proportions (must sum to 1.0)
+        const headH  = sh * 0.20;
+        const neckH  = sh * 0.03;
+        const torsoH = sh * 0.30;
+        const legH   = sh * 0.38;
+        const bootH  = sh * 0.09;
+        const headY  = sy;
+        const neckY  = headY + headH;
         const torsoY = neckY + neckH;
         const legY   = torsoY + torsoH;
+        const bootY  = legY + legH;
 
-        // Horizontal margins
-        const hm = sw * 0.25; // head margin
-        const bm = sw * 0.10; // body margin
-        const nm = sw * 0.36; // neck margin
-        const lw = (sw - bm*2) * 0.42;
-        const aw = sw * 0.13; // arm width
-
-        // Hair
-        ctx.fillStyle = hair;
-        ctx.fillRect(sx + hm, sy, sw - hm*2, headH * 0.28);
-        // Skin (head)
-        ctx.fillStyle = skin;
-        ctx.fillRect(sx + hm, sy + headH * 0.28, sw - hm*2, headH * 0.72);
-        // Eyes
-        const eyeY = sy + headH * 0.50;
-        const eyeW = Math.max(1, (sw - hm*2) * 0.18);
-        const eyeH = Math.max(1, headH * 0.18);
-        ctx.fillStyle = '#111';
-        ctx.fillRect(sx + hm + (sw-hm*2)*0.15, eyeY, eyeW, eyeH);
-        ctx.fillRect(sx + hm + (sw-hm*2)*0.63, eyeY, eyeW, eyeH);
-        // Neck
-        ctx.fillStyle = skin;
-        ctx.fillRect(sx + nm, neckY, sw - nm*2, neckH);
-        // Torso
-        ctx.fillStyle = uniform;
-        ctx.fillRect(sx + bm, torsoY, sw - bm*2, torsoH);
-        // Arms
-        ctx.fillRect(sx, torsoY, aw, torsoH * 0.80);
-        ctx.fillRect(sx + sw - aw, torsoY, aw, torsoH * 0.80);
-        // Hands
-        ctx.fillStyle = skin;
-        ctx.fillRect(sx, torsoY + torsoH * 0.80, aw, torsoH * 0.20);
-        ctx.fillRect(sx + sw - aw, torsoY + torsoH * 0.80, aw, torsoH * 0.20);
-        // Legs
-        const gap = (sw - bm*2) * 0.16;
+        const hm  = sw * 0.24;  // head margin
+        const nm  = sw * 0.36;  // neck margin
+        const bm  = sw * 0.08;  // body margin
+        const aw  = sw * 0.14;  // arm width
+        const lw  = (sw - bm*2) * 0.44;
+        const lgp = sw - bm*2 - lw*2;
         const llx = sx + bm;
-        const lrx = sx + bm + lw + gap;
-        ctx.fillStyle = pants;
-        ctx.fillRect(llx, legY, lw, legH * 0.82);
-        ctx.fillRect(lrx, legY, lw, legH * 0.82);
-        // Boots
-        ctx.fillStyle = boot;
-        ctx.fillRect(llx, legY + legH * 0.82, lw, legH * 0.18);
-        ctx.fillRect(lrx, legY + legH * 0.82, lw, legH * 0.18);
+        const lrx = llx + lw + lgp;
+
+        if (type === 0) {
+            // === BLACK SUIT GUARD (GoldenEye tuxedo style) ===
+            const skR=200,skG=162,skB=124;
+            const jkR=26, jkG=26, jkB=30;   // dark jacket
+            const ptR=20, ptG=20, ptB=26;   // dark trousers
+            const shR=228,shG=226,shB=220;  // white shirt
+
+            // Hair (dark, slicked back)
+            ctx.fillStyle = c(40,32,24);
+            ctx.fillRect(sx+hm, headY, sw-hm*2, headH*0.32);
+            // Hair side shadow
+            ctx.fillStyle = c(30,24,18);
+            ctx.fillRect(sx+hm, headY, sw*0.07, headH*0.32);
+
+            // Face
+            ctx.fillStyle = c(skR,skG,skB);
+            ctx.fillRect(sx+hm, headY+headH*0.30, sw-hm*2, headH*0.70);
+            // Ear bumps
+            ctx.fillStyle = c(skR-14,skG-14,skB-10);
+            ctx.fillRect(sx+hm-3, headY+headH*0.44, Math.max(2,sw*0.05), headH*0.28);
+            ctx.fillRect(sx+sw-hm-1, headY+headH*0.44, Math.max(2,sw*0.05), headH*0.28);
+            // Brow shadow
+            ctx.fillStyle = c(skR-22,skG-22,skB-16);
+            ctx.fillRect(sx+hm, headY+headH*0.44, sw-hm*2, headH*0.09);
+            // Eyes (shadow socket + dark iris)
+            const eyeW=Math.max(1,(sw-hm*2)*0.20), eyeH=Math.max(1,headH*0.14);
+            const eyeY=headY+headH*0.52;
+            ctx.fillStyle = c(skR-38,skG-38,skB-28);
+            ctx.fillRect(sx+hm+(sw-hm*2)*0.10, eyeY, eyeW, eyeH);
+            ctx.fillRect(sx+hm+(sw-hm*2)*0.58, eyeY, eyeW, eyeH);
+            ctx.fillStyle = c(18,14,10);
+            ctx.fillRect(sx+hm+(sw-hm*2)*0.13, eyeY+1, eyeW*0.6, eyeH*0.65);
+            ctx.fillRect(sx+hm+(sw-hm*2)*0.61, eyeY+1, eyeW*0.6, eyeH*0.65);
+            // Nose bridge
+            ctx.fillStyle = c(skR-20,skG-22,skB-16);
+            ctx.fillRect(sx+sw/2-1, eyeY+eyeH, Math.max(1,sw*0.03), headH*0.13);
+            // Mouth
+            ctx.fillStyle = c(skR-32,skG-42,skB-36);
+            ctx.fillRect(sx+hm+(sw-hm*2)*0.30, headY+headH*0.80, (sw-hm*2)*0.40, Math.max(1,headH*0.07));
+            // Jaw / chin shadow
+            ctx.fillStyle = c(skR-14,skG-16,skB-12);
+            ctx.fillRect(sx+hm, headY+headH*0.88, sw-hm*2, headH*0.12);
+
+            // Neck + white collar
+            ctx.fillStyle = c(skR-10,skG-10,skB-8);
+            ctx.fillRect(sx+nm, neckY, sw-nm*2, neckH);
+            ctx.fillStyle = c(shR,shG,shB);
+            ctx.fillRect(sx+nm-2, neckY, sw-nm*2+4, neckH*0.55);
+
+            // Jacket body
+            ctx.fillStyle = c(jkR,jkG,jkB);
+            ctx.fillRect(sx+bm, torsoY, sw-bm*2, torsoH);
+            // White shirt visible in jacket V — tapering strips
+            for (let row=0;row<12;row++){
+                const t=row/12;
+                const vw=sw*0.09 + (sw*0.30-sw*0.09)*t;
+                ctx.fillStyle = c(shR,shG,shB);
+                ctx.fillRect(sx+sw/2-vw/2, torsoY+torsoH*0.04+row*torsoH*0.08, vw, torsoH*0.08+1);
+            }
+            // Bow tie
+            ctx.fillStyle = c(18,14,14);
+            ctx.fillRect(sx+sw/2-sw*0.09, torsoY+torsoH*0.04, sw*0.18, torsoH*0.07);
+            ctx.fillStyle = c(35,28,28);
+            ctx.fillRect(sx+sw/2-sw*0.02, torsoY+torsoH*0.04, sw*0.04, torsoH*0.07); // knot
+            // Left lapel (slightly lighter than jacket)
+            ctx.fillStyle = c(jkR+10,jkG+10,jkB+14);
+            ctx.fillRect(sx+bm, torsoY, sw*0.26, torsoH*0.50);
+            // Right lapel
+            ctx.fillRect(sx+sw-bm-sw*0.26, torsoY, sw*0.26, torsoH*0.50);
+            // Jacket seam shadow
+            ctx.fillStyle = c(jkR-5,jkG-5,jkB-4);
+            ctx.fillRect(sx+sw/2-1, torsoY+torsoH*0.50, 2, torsoH*0.50);
+            // Jacket button
+            ctx.fillStyle = c(shR-10,shG-10,shB-10);
+            ctx.fillRect(sx+sw/2-1, torsoY+torsoH*0.62, Math.max(1,sw*0.04), Math.max(1,sw*0.04));
+
+            // Arms (jacket)
+            ctx.fillStyle = c(jkR,jkG,jkB);
+            ctx.fillRect(sx, torsoY+torsoH*0.04, aw, torsoH*0.76);
+            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.04, aw, torsoH*0.76);
+            // Arm highlight (lighter front edge)
+            ctx.fillStyle = c(jkR+8,jkG+8,jkB+10);
+            ctx.fillRect(sx+1, torsoY+torsoH*0.06, Math.max(1,aw*0.3), torsoH*0.70);
+            ctx.fillRect(sx+sw-aw+1, torsoY+torsoH*0.06, Math.max(1,aw*0.3), torsoH*0.70);
+            // White shirt cuffs
+            ctx.fillStyle = c(shR,shG,shB);
+            ctx.fillRect(sx, torsoY+torsoH*0.76, aw, torsoH*0.10);
+            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.76, aw, torsoH*0.10);
+            // Hands (fists)
+            ctx.fillStyle = c(skR,skG,skB);
+            ctx.fillRect(sx, torsoY+torsoH*0.86, aw, torsoH*0.14);
+            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.86, aw, torsoH*0.14);
+            ctx.fillStyle = c(skR-16,skG-16,skB-12);
+            ctx.fillRect(sx, torsoY+torsoH*0.94, aw, torsoH*0.06);
+            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.94, aw, torsoH*0.06);
+
+            // Trousers
+            ctx.fillStyle = c(ptR,ptG,ptB);
+            ctx.fillRect(llx, legY, lw, legH);
+            ctx.fillRect(lrx, legY, lw, legH);
+            ctx.fillStyle = c(ptR-6,ptG-6,ptB-4);
+            ctx.fillRect(llx+lw*0.5, legY, Math.max(1,lw*0.08), legH);
+            ctx.fillRect(lrx+lw*0.5, legY, Math.max(1,lw*0.08), legH);
+
+            // Shoes (wide, polished black)
+            ctx.fillStyle = c(14,12,14);
+            ctx.fillRect(llx-2, bootY, lw+5, bootH*0.55);
+            ctx.fillRect(lrx-2, bootY, lw+5, bootH*0.55);
+            ctx.fillRect(llx-2, bootY+bootH*0.55, lw+6, bootH*0.45);
+            ctx.fillRect(lrx-2, bootY+bootH*0.55, lw+6, bootH*0.45);
+            // Shoe highlight (polished sheen)
+            ctx.fillStyle = c(42,38,42);
+            ctx.fillRect(llx, bootY+1, lw+1, bootH*0.18);
+            ctx.fillRect(lrx, bootY+1, lw+1, bootH*0.18);
+
+        } else {
+            // === MILITARY SOLDIER (olive uniform + helmet) ===
+            const skR=202,skG=162,skB=120;
+            const unR=72, unG=84, unB=48;   // olive uniform
+            const ptR=58, ptG=68, ptB=38;   // darker olive trousers
+            const btR=40, btG=30, btB=18;   // dark brown boots
+            const hlR=55, hlG=66, hlB=34;   // helmet
+
+            // Helmet
+            ctx.fillStyle = c(hlR,hlG,hlB);
+            ctx.fillRect(sx+hm-4, headY, sw-hm*2+8, headH*0.38);
+            // Helmet top ridge
+            ctx.fillStyle = c(hlR-8,hlG-8,hlB-5);
+            ctx.fillRect(sx+hm-2, headY, sw-hm*2+4, headH*0.08);
+            // Helmet brim overhang
+            ctx.fillStyle = c(hlR-10,hlG-10,hlB-6);
+            ctx.fillRect(sx+hm-6, headY+headH*0.32, sw-hm*2+12, headH*0.10);
+            // Helmet shade
+            ctx.fillStyle = c(hlR+10,hlG+12,hlB+6);
+            ctx.fillRect(sx+hm, headY+headH*0.04, sw*0.08, headH*0.22);
+
+            // Face
+            ctx.fillStyle = c(skR,skG,skB);
+            ctx.fillRect(sx+hm, headY+headH*0.36, sw-hm*2, headH*0.64);
+            // Ear bumps
+            ctx.fillStyle = c(skR-14,skG-14,skB-10);
+            ctx.fillRect(sx+hm-3, headY+headH*0.46, Math.max(2,sw*0.05), headH*0.26);
+            ctx.fillRect(sx+sw-hm-1, headY+headH*0.46, Math.max(2,sw*0.05), headH*0.26);
+            // Brow shadow
+            ctx.fillStyle = c(skR-18,skG-20,skB-14);
+            ctx.fillRect(sx+hm, headY+headH*0.44, sw-hm*2, headH*0.08);
+            // Eyes
+            const eyeW2=Math.max(1,(sw-hm*2)*0.20), eyeH2=Math.max(1,headH*0.13);
+            const eyeY2=headY+headH*0.52;
+            ctx.fillStyle = c(skR-35,skG-35,skB-25);
+            ctx.fillRect(sx+hm+(sw-hm*2)*0.10, eyeY2, eyeW2, eyeH2);
+            ctx.fillRect(sx+hm+(sw-hm*2)*0.58, eyeY2, eyeW2, eyeH2);
+            ctx.fillStyle = c(20,16,10);
+            ctx.fillRect(sx+hm+(sw-hm*2)*0.13, eyeY2+1, eyeW2*0.6, eyeH2*0.65);
+            ctx.fillRect(sx+hm+(sw-hm*2)*0.61, eyeY2+1, eyeW2*0.6, eyeH2*0.65);
+            // Nose
+            ctx.fillStyle = c(skR-20,skG-22,skB-16);
+            ctx.fillRect(sx+sw/2-1, eyeY2+eyeH2, Math.max(1,sw*0.03), headH*0.12);
+            // Mouth
+            ctx.fillStyle = c(skR-30,skG-40,skB-32);
+            ctx.fillRect(sx+hm+(sw-hm*2)*0.30, headY+headH*0.79, (sw-hm*2)*0.40, Math.max(1,headH*0.07));
+            // Chin shadow
+            ctx.fillStyle = c(skR-12,skG-14,skB-10);
+            ctx.fillRect(sx+hm, headY+headH*0.88, sw-hm*2, headH*0.12);
+
+            // Neck
+            ctx.fillStyle = c(skR-10,skG-10,skB-8);
+            ctx.fillRect(sx+nm, neckY, sw-nm*2, neckH);
+
+            // Jacket body
+            ctx.fillStyle = c(unR,unG,unB);
+            ctx.fillRect(sx+bm, torsoY, sw-bm*2, torsoH);
+            // Collar (darker)
+            ctx.fillStyle = c(unR-10,unG-10,unB-6);
+            ctx.fillRect(sx+bm, torsoY, sw-bm*2, torsoH*0.11);
+            // Centre seam
+            ctx.fillStyle = c(unR-12,unG-12,unB-8);
+            ctx.fillRect(sx+sw/2-1, torsoY, 2, torsoH*0.88);
+            // Chest pocket (left breast)
+            ctx.fillStyle = c(unR-10,unG-10,unB-6);
+            ctx.fillRect(sx+bm+2, torsoY+torsoH*0.22, sw*0.21, torsoH*0.19);
+            ctx.fillStyle = c(unR+6,unG+6,unB+4);
+            ctx.fillRect(sx+bm+2, torsoY+torsoH*0.22, sw*0.21, torsoH*0.04);
+            // Shoulder epaulette lines
+            ctx.fillStyle = c(unR-14,unG-14,unB-8);
+            ctx.fillRect(sx+bm, torsoY+torsoH*0.02, sw*0.18, torsoH*0.08);
+            ctx.fillRect(sx+sw-bm-sw*0.18, torsoY+torsoH*0.02, sw*0.18, torsoH*0.08);
+            // Belt
+            ctx.fillStyle = c(42,32,18);
+            ctx.fillRect(sx+bm, torsoY+torsoH*0.87, sw-bm*2, torsoH*0.14);
+            ctx.fillStyle = c(88,72,38);
+            ctx.fillRect(sx+sw/2-sw*0.04, torsoY+torsoH*0.87, sw*0.08, torsoH*0.14); // buckle
+            ctx.fillStyle = c(55,44,22);
+            ctx.fillRect(sx+sw/2-sw*0.015, torsoY+torsoH*0.89, sw*0.03, torsoH*0.10); // buckle slot
+
+            // Arms
+            ctx.fillStyle = c(unR,unG,unB);
+            ctx.fillRect(sx, torsoY+torsoH*0.04, aw, torsoH*0.84);
+            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.04, aw, torsoH*0.84);
+            // Arm highlight
+            ctx.fillStyle = c(unR+8,unG+8,unB+5);
+            ctx.fillRect(sx+1, torsoY+torsoH*0.06, Math.max(1,aw*0.3), torsoH*0.76);
+            ctx.fillRect(sx+sw-aw+1, torsoY+torsoH*0.06, Math.max(1,aw*0.3), torsoH*0.76);
+            // Cuff stripe
+            ctx.fillStyle = c(unR-16,unG-16,unB-10);
+            ctx.fillRect(sx, torsoY+torsoH*0.80, aw, torsoH*0.08);
+            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.80, aw, torsoH*0.08);
+            // Hands
+            ctx.fillStyle = c(skR,skG,skB);
+            ctx.fillRect(sx, torsoY+torsoH*0.86, aw, torsoH*0.14);
+            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.86, aw, torsoH*0.14);
+            ctx.fillStyle = c(skR-16,skG-16,skB-12);
+            ctx.fillRect(sx, torsoY+torsoH*0.94, aw, torsoH*0.06);
+            ctx.fillRect(sx+sw-aw, torsoY+torsoH*0.94, aw, torsoH*0.06);
+
+            // Trousers
+            ctx.fillStyle = c(ptR,ptG,ptB);
+            ctx.fillRect(llx, legY, lw, legH);
+            ctx.fillRect(lrx, legY, lw, legH);
+            ctx.fillStyle = c(ptR-8,ptG-8,ptB-5);
+            ctx.fillRect(llx+lw*0.5, legY, Math.max(1,lw*0.08), legH);
+            ctx.fillRect(lrx+lw*0.5, legY, Math.max(1,lw*0.08), legH);
+
+            // Boots
+            ctx.fillStyle = c(btR,btG,btB);
+            ctx.fillRect(llx-1, bootY, lw+2, bootH);
+            ctx.fillRect(lrx-1, bootY, lw+2, bootH);
+            ctx.fillStyle = c(btR+16,btG+12,btB+8);
+            ctx.fillRect(llx, bootY+1, lw, bootH*0.24);
+            ctx.fillRect(lrx, bootY+1, lw, bootH*0.24);
+            ctx.fillStyle = c(btR-5,btG-5,btB-3);
+            ctx.fillRect(llx-1, bootY+bootH*0.65, lw+3, bootH*0.35);
+            ctx.fillRect(lrx-1, bootY+bootH*0.65, lw+3, bootH*0.35);
+        }
     }
 
     // ---- WEAPON SPRITE — PP7 + human hand (GoldenEye style) ---------------
@@ -657,7 +857,6 @@
         const rY = gun.recoil * 3;
         const bY = player.bobOffset * 0.5;
 
-        // Anchor: bottom-right, gun center-of-grip
         const GX = 510;
         const GY = CH - 30 + rY + bY;
 
@@ -668,83 +867,154 @@
         const frameY = slideY + slideH;
         const gripY  = frameY + 22;
 
-        // === FOREARM (skin, angled from lower-right) ===
+        // === FOREARM ===
         ctx.save();
         ctx.translate(GX + 58, GY + 28);
         ctx.rotate(-0.10);
+        // Base skin
         ctx.fillStyle = '#c07850';
         ctx.fillRect(-22, -145, 48, 180);
-        // Arm shadow edges
-        ctx.fillStyle = 'rgba(0,0,0,0.22)';
-        ctx.fillRect(-22, -145, 11, 180);
-        ctx.fillRect(15,  -145, 11, 180);
+        // Inner forearm lighter highlight (radial feel)
+        ctx.fillStyle = 'rgba(215,155,105,0.45)';
+        ctx.fillRect(-7, -130, 18, 155);
+        // Shadow on sides
+        ctx.fillStyle = 'rgba(0,0,0,0.30)';
+        ctx.fillRect(-22, -145, 13, 180);
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fillRect(12, -145, 12, 180);
+        // Wrist bone protrusions
+        ctx.fillStyle = 'rgba(210,162,112,0.58)';
+        ctx.fillRect(-17, 16, 10, 11);
+        ctx.fillRect(7, 12, 9, 9);
         // Sleeve cuff
-        ctx.fillStyle = '#3a2a14';
-        ctx.fillRect(-22, -145, 48, 9);
+        ctx.fillStyle = '#28190e';
+        ctx.fillRect(-22, -145, 48, 13);
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.fillRect(-22, -132, 48, 5);
         ctx.restore();
 
         // === BARREL ===
-        ctx.fillStyle = '#505050';
+        ctx.fillStyle = '#484848';
         ctx.fillRect(GX - 5, slideY - barrelLen, 10, barrelLen + 5);
-        ctx.fillStyle = '#222';
-        ctx.fillRect(GX - 3, slideY - barrelLen, 6, 6);   // muzzle hole
+        ctx.fillStyle = '#2a2a2a';
+        ctx.fillRect(GX - 5, slideY - barrelLen, 3, barrelLen);   // barrel left shadow
+        ctx.fillStyle = '#1e1e1e';
+        ctx.fillRect(GX - 3, slideY - barrelLen, 6, 7);           // muzzle opening
+        // Front sight post
+        ctx.fillStyle = '#303030';
+        ctx.fillRect(GX - 2, slideY - barrelLen + 8, 4, 9);
+        ctx.fillStyle = 'rgba(255,255,200,0.55)';
+        ctx.fillRect(GX - 1, slideY - barrelLen + 9, 2, 4);       // sight dot
 
-        // === SLIDE (silver) ===
-        ctx.fillStyle = '#d6d6d6';
+        // === SLIDE ===
+        ctx.fillStyle = '#d2d2d2';
         ctx.fillRect(slideX, slideY, slideW, slideH);
-        // Top of slide slightly darker
-        ctx.fillStyle = '#b8b8b8';
-        ctx.fillRect(slideX, slideY, slideW, 9);
-        // Rear serrations
-        ctx.fillStyle = '#a0a0a0';
-        for (let i = 0; i < 7; i++) {
-            ctx.fillRect(slideX + slideW - 10, slideY + 5 + i * 5, 8, 3);
+        // Top chamfer highlight
+        ctx.fillStyle = '#e8e8e8';
+        ctx.fillRect(slideX + 2, slideY, slideW - 4, 5);
+        // Rear face darker
+        ctx.fillStyle = '#acacac';
+        ctx.fillRect(slideX, slideY, slideW, 12);
+        // Rear serrations (deeper grooves)
+        for (let i = 0; i < 9; i++) {
+            ctx.fillStyle = '#828282';
+            ctx.fillRect(slideX + slideW - 12, slideY + 6 + i * 5, 10, 3);
+            ctx.fillStyle = '#b4b4b4';
+            ctx.fillRect(slideX + slideW - 12, slideY + 7 + i * 5, 10, 1);
         }
         // Ejection port
-        ctx.fillStyle = '#808080';
-        ctx.fillRect(slideX + slideW - 13, slideY + 42, 12, 22);
-        ctx.fillStyle = '#303030';
-        ctx.fillRect(slideX + slideW - 12, slideY + 43, 10, 20);
+        ctx.fillStyle = '#787878';
+        ctx.fillRect(slideX + slideW - 14, slideY + 38, 13, 25);
+        ctx.fillStyle = '#242424';
+        ctx.fillRect(slideX + slideW - 13, slideY + 39, 11, 23);
         // Left edge highlight
-        ctx.fillStyle = 'rgba(255,255,255,0.38)';
-        ctx.fillRect(slideX + 1, slideY + 2, 3, slideH - 4);
+        ctx.fillStyle = 'rgba(255,255,255,0.42)';
+        ctx.fillRect(slideX + 1, slideY + 3, 3, slideH - 6);
+        // Rear sights (two posts)
+        ctx.fillStyle = '#252525';
+        ctx.fillRect(slideX + 4, slideY + 2, 7, 8);
+        ctx.fillRect(slideX + 17, slideY + 2, 7, 8);
+        ctx.fillStyle = 'rgba(255,255,200,0.5)';
+        ctx.fillRect(slideX + 6, slideY + 4, 3, 4);
+        ctx.fillRect(slideX + 19, slideY + 4, 3, 4);
 
         // === FRAME ===
-        ctx.fillStyle = '#b0b0b0';
+        ctx.fillStyle = '#a6a6a6';
         ctx.fillRect(slideX - 2, frameY, slideW + 2, 26);
+        ctx.fillStyle = '#bfbfbf';
+        ctx.fillRect(slideX, frameY, slideW - 2, 4);               // slide/frame seam
         // Trigger guard
-        ctx.fillStyle = '#404040';
-        ctx.fillRect(slideX - 5, frameY + 8, 7, 24);
-        ctx.fillRect(slideX - 5, frameY + 29, slideW - 8, 6);
+        ctx.fillStyle = '#353535';
+        ctx.fillRect(slideX - 7, frameY + 7, 9, 27);
+        ctx.fillRect(slideX - 7, frameY + 31, slideW - 6, 7);
+        ctx.fillStyle = '#252525';
+        ctx.fillRect(slideX - 6, frameY + 8, 4, 25);               // guard inner shadow
 
-        // === GRIP (dark, checkered) ===
-        ctx.fillStyle = '#1c1c1c';
-        ctx.fillRect(GX - 16, gripY, 30, 58);
-        ctx.fillStyle = '#141414';
-        for (let r = 0; r < 6; r++) {
+        // === GRIP ===
+        ctx.fillStyle = '#191919';
+        ctx.fillRect(GX - 16, gripY, 30, 60);
+        ctx.fillStyle = '#101010';
+        for (let r = 0; r < 7; r++) {
             for (let c = 0; c < 3; c++) {
-                ctx.fillRect(GX - 13 + c * 8, gripY + 4 + r * 9, 6, 7);
+                ctx.fillRect(GX - 13 + c * 8, gripY + 3 + r * 8, 6, 6);
             }
         }
+        ctx.fillStyle = 'rgba(255,255,255,0.07)';
+        ctx.fillRect(GX - 15, gripY, 4, 60);                       // grip edge highlight
+        // Magazine base plate
+        ctx.fillStyle = '#222';
+        ctx.fillRect(GX - 14, gripY + 54, 28, 8);
+        ctx.fillStyle = '#333';
+        ctx.fillRect(GX - 13, gripY + 55, 26, 3);
 
-        // === HAND gripping gun ===
+        // === HAND ===
         const handY = gripY - 6;
-        // Palm (right side + back of hand)
+        // Palm / back of hand
         ctx.fillStyle = '#c07850';
         ctx.fillRect(GX + 12, handY, 28, 55);
-        // Thumb (left of grip)
+        // Palm centre highlight
+        ctx.fillStyle = 'rgba(210,155,100,0.42)';
+        ctx.fillRect(GX + 17, handY + 6, 14, 36);
+        // Pinky-side shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.fillRect(GX + 32, handY, 8, 55);
+        // Knuckle row at palm top
+        ctx.fillStyle = '#b87248';
+        for (let f = 0; f < 4; f++) ctx.fillRect(GX + 13 + f * 6, handY, 5, 8);
+        ctx.fillStyle = 'rgba(225,175,128,0.5)';
+        for (let f = 0; f < 4; f++) ctx.fillRect(GX + 14 + f * 6, handY + 1, 3, 4);
+
+        // Thumb
         ctx.fillStyle = '#b06840';
-        ctx.fillRect(GX - 22, handY + 6, 14, 32);
-        // Fingers wrapping front of grip
+        ctx.fillRect(GX - 24, handY + 3, 16, 36);
+        ctx.fillStyle = 'rgba(195,135,85,0.45)';
+        ctx.fillRect(GX - 21, handY + 8, 8, 22);
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.fillRect(GX - 24, handY + 3, 5, 36);
+        // Thumb tip + nail
+        ctx.fillStyle = '#9e5630';
+        ctx.fillRect(GX - 24, handY + 3, 16, 9);
+        ctx.fillStyle = 'rgba(215,185,155,0.65)';
+        ctx.fillRect(GX - 21, handY + 4, 8, 5);
+
+        // Four fingers wrapping grip (with crease gaps between)
         for (let f = 0; f < 4; f++) {
+            const fy2 = handY + 9 + f * 12;
             ctx.fillStyle = f % 2 === 0 ? '#b87248' : '#c07850';
-            ctx.fillRect(GX - 20, handY + 10 + f * 12, 34, 10);
+            ctx.fillRect(GX - 22, fy2, 36, 10);
+            // Inner finger highlight
+            ctx.fillStyle = 'rgba(218,162,112,0.38)';
+            ctx.fillRect(GX - 20, fy2 + 1, 28, 4);
+            // Crease between fingers
+            if (f < 3) {
+                ctx.fillStyle = 'rgba(0,0,0,0.38)';
+                ctx.fillRect(GX - 22, fy2 + 10, 36, 2);
+            }
         }
-        // Knuckle highlights
-        ctx.fillStyle = 'rgba(255,215,175,0.28)';
-        for (let f = 0; f < 4; f++) {
-            ctx.fillRect(GX - 20, handY + 10 + f * 12, 34, 3);
-        }
+        // Fingernails on top two knuckles
+        ctx.fillStyle = 'rgba(215,185,150,0.58)';
+        ctx.fillRect(GX - 19, handY + 9,  24, 4);
+        ctx.fillRect(GX - 19, handY + 21, 24, 4);
 
         // === MUZZLE FLASH ===
         if (gun.muzzleFlash > 0) {
