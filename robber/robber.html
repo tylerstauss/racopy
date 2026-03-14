@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Lode Runner: NPCs 25% slower, no more getting stuck</title>
+    <style>
+        body { background-color: #111; color: white; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
+        #game-container { border: 4px solid #555; background-color: #000; position: relative; box-shadow: 0 0 20px #000; }
+        .hud { width: 640px; display: flex; justify-content: space-between; padding: 10px 0; font-size: 22px; color: #ffd700; text-transform: uppercase; }
+        #win-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 10; gap: 6px; }
+        #win-screen h1 { color: #ffd700; font-size: 32px; margin: 0 0 4px; }
+        #win-time { color: #fff; font-size: 22px; margin: 0; }
+        #leaderboard { color: #aaa; font-size: 15px; text-align: left; min-width: 260px; margin: 8px 0; }
+        #leaderboard .lb-title { color: #ffd700; font-size: 16px; margin-bottom: 6px; letter-spacing: 1px; }
+        #leaderboard .lb-entry { padding: 1px 0; }
+        #leaderboard .lb-new { color: #2ecc71; font-weight: bold; }
+        #win-screen button, #gameover-screen button { font-family: 'Courier New', monospace; background: #ffd700; color: #000; border: none; padding: 10px 32px; font-size: 17px; cursor: pointer; text-transform: uppercase; margin-top: 8px; letter-spacing: 1px; }
+        #gameover-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 10; gap: 12px; }
+        #gameover-screen h1 { color: #e74c3c; font-size: 36px; margin: 0; }
+        #gameover-screen p { color: #aaa; font-size: 16px; margin: 0; }
+        #gameover-screen button { background: #e74c3c; color: #fff; }
+        #final-scoreboard-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.98); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 20; color: gold; font-size: 24px; }
+        #final-scoreboard-screen h1 { color: gold; margin: 0 0 10px; }
+        #final-leaderboard { color: white; font-size: 20px; text-align: left; min-width: 300px; }
+        .small-note { color: #aaa; font-size: 16px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="hud">
+        <span>Gold: <span id="gold-ui">0</span> / <span id="gold-target-ui">6</span></span>
+        <span id="timer-ui">0:00.0</span>
+        <span>Level <span id="level-ui">1</span>/20</span>
+    </div>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="640" height="480"></canvas>
+        <div id="win-screen">
+            <h1>LEVEL CLEAR</h1>
+            <p id="win-time"></p>
+            <div id="leaderboard"></div>
+            <button id="next-level-btn">NEXT LEVEL</button>
+        </div>
+        <div id="gameover-screen">
+            <h1>CAUGHT!</h1>
+            <p>a fat guard got you...</p>
+            <button onclick="location.reload()">TRY AGAIN</button>
+        </div>
+    </div>
+
+    <div id="final-scoreboard-screen">
+        <h1>🏆 CHAMPION 🏆</h1>
+        <div id="final-leaderboard">loading...</div>
+        <div class="small-note">total time (all levels)</div>
+        <button onclick="location.reload()" style="margin-top:30px; background:gold; color:black; border:none; padding:10px 30px;">PLAY AGAIN</button>
+    </div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const goldUI = document.getElementById('gold-ui');
+const goldTargetUI = document.getElementById('gold-target-ui');
+const levelUI = document.getElementById('level-ui');
+const timerUI = document.getElementById('timer-ui');
+const winScreen = document.getElementById('win-screen');
+const gameoverScreen = document.getElementById('gameover-screen');
+const finalScreen = document.getElementById('final-scoreboard-screen');
+const nextBtn = document.getElementById('next-level-btn');
+
+// ---------- global data: 20 levels, per-level times, cumulative ----------
+const TOTAL_LEVELS = 20;
+let currentLevel = 1;
+let levelTimes = [];
+let timerStart = null;
+let timerEnd = null;
+let gameWon = false;
+let gameActive = true;
+let enemies = [];
+
+function levelStorageKey(lvl) { return `loderunner_lvl${lvl}_times`; }
+const FINAL_KEY = 'loderunner_final_total_times';
+
+function formatTime(ms) {
+    if (!ms && ms !== 0) return '—';
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    const h = Math.floor((ms % 1000) / 100);
+    return `${m}:${String(s).padStart(2, '0')}.${h}`;
+}
+
+function loadLevelTimes(lvl) {
+    try { return JSON.parse(localStorage.getItem(levelStorageKey(lvl))) || []; }
+    catch { return []; }
+}
+
+function recordLevelTime(lvl, ms) {
+    const times = loadLevelTimes(lvl);
+    times.push(ms);
+    times.sort((a, b) => a - b);
+    const top10 = times.slice(0, 10);
+    localStorage.setItem(levelStorageKey(lvl), JSON.stringify(top10));
+    const rank = top10.indexOf(ms);
+    return { top10, rank };
+}
+
+function loadFinalTimes() {
+    try { return JSON.parse(localStorage.getItem(FINAL_KEY)) || []; }
+    catch { return []; }
+}
+
+function recordFinalTotal(totalMs) {
+    let finals = loadFinalTimes();
+    finals.push(totalMs);
+    finals.sort((a, b) => a - b);
+    const top10 = finals.slice(0, 10);
+    localStorage.setItem(FINAL_KEY, JSON.stringify(top10));
+    return top10;
+}
+
+function showLevelWin(ms) {
+    timerUI.textContent = formatTime(ms);
+    document.getElementById('win-time').textContent = `Level ${currentLevel} time: ${formatTime(ms)}`;
+    const { top10, rank } = recordLevelTime(currentLevel, ms);
+    const lb = document.getElementById('leaderboard');
+    lb.innerHTML = `<div class="lb-title">Best Times — Level ${currentLevel}</div>` +
+        top10.map((t, i) => {
+            const cls = (i === rank) ? ' lb-new' : '';
+            return `<div class="lb-entry${cls}">${i + 1}. ${formatTime(t)}</div>`;
+        }).join('');
+    winScreen.style.display = 'flex';
+}
+
+function hideWin() { winScreen.style.display = 'none'; }
+
+function showGameOver() {
+    gameActive = false;
+    gameoverScreen.style.display = 'flex';
+}
+
+// ---------- level data with proper enemy spawns ----------
+function getLevelData(level) {
+    const baseMap = [
+        [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+        [5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,5],
+        [5,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,2,5],
+        [5,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,2,0,2,5],
+        [5,0,0,4,0,0,0,0,2,0,0,4,0,0,0,0,2,0,2,5],
+        [5,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,2,5],
+        [5,0,0,0,0,2,0,0,2,0,0,0,0,0,2,0,0,0,2,5],
+        [5,0,3,3,3,2,3,3,2,3,3,3,3,3,2,3,3,3,2,5],
+        [5,0,0,0,0,2,0,0,2,0,0,0,0,0,2,0,0,4,2,5],
+        [5,1,1,2,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,5],
+        [5,0,0,2,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,5],
+        [5,0,4,2,0,4,0,0,0,2,0,0,0,0,0,1,1,1,1,5],
+        [5,1,1,2,1,1,1,2,1,1,1,1,2,1,1,1,0,0,0,5],
+        [5,0,0,2,0,0,0,2,0,0,0,0,2,0,0,0,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5]
+    ];
+    
+    let mapCopy = baseMap.map(row => [...row]);
+    let goldCount = 6;
+    let enemiesStart = [];
+    
+    if (level === 1) {
+        enemiesStart = [{ x: 5*32, y: 2*32 }];
+    } else if (level === 2) {
+        enemiesStart = [{ x: 5*32, y: 2*32 }, { x: 10*32, y: 5*32 }];
+    } else if (level === 3) {
+        enemiesStart = [{ x: 5*32, y: 2*32 }, { x: 10*32, y: 8*32 }];
+    } else if (level === 4) {
+        enemiesStart = [{ x: 3*32, y: 2*32 }, { x: 8*32, y: 5*32 }, { x: 15*32, y: 10*32 }];
+    } else if (level === 5) {
+        mapCopy[4][2] = 4; mapCopy[4][11] = 4; mapCopy[11][1] = 4; mapCopy[11][4] = 4;
+        goldCount = 8;
+        enemiesStart = [{ x: 4*32, y: 3*32 }, { x: 12*32, y: 6*32 }, { x: 7*32, y: 12*32 }];
+    } else {
+        let enemyCount = Math.min(2 + Math.floor(level / 2), 6);
+        for (let i = 0; i < enemyCount; i++) {
+            let cx = 5 + (i * 3) % 15;
+            let cy = 2 + (i * 2) % 10;
+            enemiesStart.push({ x: cx * 32, y: cy * 32 });
+        }
+        goldCount = 6 + Math.floor(level / 3);
+        for (let g = 0; g < level; g++) {
+            let rx = 2 + (g * 3) % 16;
+            let ry = 2 + (g * 2) % 12;
+            if (mapCopy[ry][rx] === 0) mapCopy[ry][rx] = 4;
+        }
+    }
+
+    return { map: mapCopy, goldTarget: goldCount, enemies: enemiesStart };
+}
+
+// Load current level
+function loadLevel(level) {
+    const data = getLevelData(level);
+    map = data.map.map(row => [...row]);
+    const goldTarget = data.goldTarget || 6;
+    goldTargetUI.innerText = goldTarget;
+
+    player = {
+        x: TILE * 1,
+        y: TILE * 13,
+        speed: 3,
+        gold: 0,
+        isFalling: false,
+        state: 'idle',
+        facing: 'right',
+        animTick: 0
+    };
+    goldUI.innerText = '0';
+    
+    // Enemy speed = 50% of player speed (1.5) then cut by 25% = 1.125
+    // Player speed = 3, so 50% = 1.5, reduce by 25% = 1.125
+    const enemySpeed = player.speed * 0.5 * 0.75; // 1.125
+    
+    enemies = data.enemies.map(e => ({
+        x: e.x,
+        y: e.y,
+        speed: enemySpeed,
+        stuckCounter: 0,
+        lastX: e.x,
+        lastY: e.y
+    }));
+
+    timerStart = null;
+    timerEnd = null;
+    gameWon = false;
+    gameActive = true;
+    hideWin();
+    gameoverScreen.style.display = 'none';
+    finalScreen.style.display = 'none';
+    levelUI.innerText = level;
+}
+
+// ---------- constants ----------
+const TILE = 32;
+const ROWS = 15;
+const COLS = 20;
+
+let map = [];
+let player = { x: TILE, y: TILE*13, speed:3, gold:0, isFalling:false, state:'idle', facing:'right', animTick:0 };
+const keys = {};
+window.addEventListener('keydown', e => keys[e.code] = true);
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+function getTile(tx, ty) {
+    if (!map.length) return 5;
+    if (ty < 0 || ty >= ROWS || tx < 0 || tx >= COLS) return 5;
+    return map[ty][tx];
+}
+
+// ========== ENEMY AI: 25% slower, anti-stuck logic ==========
+function moveEnemies() {
+    if (!gameActive || gameWon) return;
+
+    for (let e of enemies) {
+        // Current tile indices
+        let cx = Math.floor((e.x + TILE/2) / TILE);
+        let cy = Math.floor((e.y + TILE/2) / TILE);
+        
+        // what's under feet?
+        let tileAt = getTile(cx, cy);
+        let tileBelow = getTile(cx, Math.floor((e.y + TILE + 2) / TILE));
+        
+        // ANTI-STUCK: if position hasn't changed much, force a move
+        if (Math.abs(e.x - e.lastX) < 0.5 && Math.abs(e.y - e.lastY) < 0.5) {
+            e.stuckCounter++;
+        } else {
+            e.stuckCounter = 0;
+        }
+        
+        e.lastX = e.x;
+        e.lastY = e.y;
+        
+        // If stuck for several frames, try jumping direction
+        if (e.stuckCounter > 10) {
+            // Force move in player direction
+            if (player.x > e.x) e.x += e.speed * 2;
+            else e.x -= e.speed * 2;
+            e.stuckCounter = 0;
+            continue;
+        }
+        
+        // IMPORTANT: NPCs should NEVER be on bars (type 3)
+        if (tileAt === 3) {
+            e.y += 4; // fall through bar
+            continue;
+        }
+        
+        let onLadder = (tileAt === 2);
+        let onSolid = (tileBelow === 1 || tileBelow === 5);
+        
+        // Check for ladders
+        let ladderBelow = (cy < ROWS-1 && getTile(cx, cy+1) === 2);
+        let ladderAbove = (cy > 0 && getTile(cx, cy-1) === 2);
+        let ladderLeft = (cx > 0 && getTile(cx-1, cy) === 2);
+        let ladderRight = (cx < COLS-1 && getTile(cx+1, cy) === 2);
+        
+        // 1. GRAVITY (if not on ladder and not on solid ground)
+        if (!onLadder && !onSolid) {
+            e.y += 2.5; // fall
+            continue;
+        } else {
+            // snap to grid if landed
+            if (!onLadder && onSolid) {
+                if (e.y % 4 !== 0) e.y = Math.round(e.y / 4) * 4;
+            }
+        }
+
+        // Player position tiles
+        let pc = Math.floor((player.x + TILE/2) / TILE);
+        let pr = Math.floor((player.y + TILE/2) / TILE);
+
+        // Determine if we should climb
+        let shouldClimbUp = (pr < cy);
+        let shouldClimbDown = (pr > cy);
+        
+        // --- GETTING OFF LADDERS ---
+        // If on ladder and player on same level, get off
+        if (onLadder && pr === cy) {
+            // Try to move horizontally toward player
+            let dir = (player.x > e.x) ? 1 : -1;
+            let newX = e.x + dir * e.speed;
+            let nextCx = Math.floor((newX + TILE/2) / TILE);
+            
+            // Check if we can step off onto solid ground
+            let tileBelowTarget = getTile(nextCx, Math.floor((e.y + TILE + 2) / TILE));
+            let tileAtTarget = getTile(nextCx, cy);
+            
+            // Can step off if ground is solid and no wall
+            if (tileAtTarget !== 1 && tileAtTarget !== 5 && tileAtTarget !== 3 && 
+                (tileBelowTarget === 1 || tileBelowTarget === 5)) {
+                e.x = newX;
+                e.y = cy * TILE + 16; // align to center
+                continue;
+            }
+        }
+        
+        // Climbing logic
+        if (onLadder) {
+            if (shouldClimbUp && ladderAbove) {
+                e.y -= e.speed;
+                e.x = cx * TILE + 8; // center on ladder
+                continue;
+            } else if (shouldClimbDown && ladderBelow) {
+                e.y += e.speed;
+                e.x = cx * TILE + 8;
+                continue;
+            }
+        }
+        
+        // Move toward ladder if needed
+        if (!onLadder) {
+            if (shouldClimbUp) {
+                if (ladderLeft) { e.x -= e.speed; continue; }
+                if (ladderRight) { e.x += e.speed; continue; }
+            }
+            if (shouldClimbDown) {
+                if (ladderLeft) { e.x -= e.speed; continue; }
+                if (ladderRight) { e.x += e.speed; continue; }
+            }
+        }
+
+        // Horizontal chase (when on same level or no ladder needed)
+        let moveX = 0;
+        let dir = (player.x > e.x) ? 1 : -1;
+        let newX = e.x + dir * e.speed;
+        let nextCx = Math.floor((newX + TILE/2) / TILE);
+        
+        // Check if next tile is walkable
+        let tileFront = getTile(nextCx, cy);
+        let tileBelowFront = getTile(nextCx, Math.floor((e.y + TILE + 2) / TILE));
+        
+        // Can walk if not wall, not bar, and ground below
+        if (tileFront !== 1 && tileFront !== 5 && tileFront !== 3 && 
+            (tileBelowFront === 1 || tileBelowFront === 5 || tileBelowFront === 2)) {
+            moveX = dir * e.speed;
+        } else {
+            // If blocked, try to jump (small random movement to prevent sticking)
+            if (Math.random() < 0.1) {
+                e.x += (Math.random() > 0.5 ? e.speed : -e.speed);
+            }
+        }
+        
+        // Apply horizontal movement
+        if (moveX !== 0) {
+            let newX = e.x + moveX;
+            let tx = Math.floor((newX + TILE/2) / TILE);
+            let tyFeet = Math.floor((e.y + TILE-2) / TILE);
+            if (getTile(tx, tyFeet) !== 1 && getTile(tx, tyFeet) !== 5 && getTile(tx, tyFeet) !== 3) {
+                e.x = newX;
+            }
+        }
+
+        // Catch player?
+        if (player.x < e.x + TILE && player.x + TILE > e.x &&
+            player.y < e.y + TILE && player.y + TILE > e.y) {
+            showGameOver();
+        }
+    }
+}
+
+// ========== DRAW FAT STICK FIGURE ENEMIES ==========
+function drawEnemies() {
+    for (let e of enemies) {
+        const ex = e.x;
+        const ey = e.y;
+        const cx = ex + TILE/2;
+        const cy = ey + TILE/2;
+
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = '#c0392b';
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        // head (big)
+        ctx.beginPath();
+        ctx.arc(cx, ey + 8, 8, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // thick torso
+        ctx.beginPath();
+        ctx.moveTo(cx, ey + 16);
+        ctx.lineTo(cx, ey + 28);
+        ctx.stroke();
+
+        // arms (thick)
+        ctx.beginPath();
+        ctx.moveTo(cx - 10, ey + 20);
+        ctx.lineTo(cx + 10, ey + 20);
+        ctx.stroke();
+
+        // legs (thick)
+        ctx.beginPath();
+        ctx.moveTo(cx - 8, ey + 28);
+        ctx.lineTo(cx - 8, ey + 38);
+        ctx.moveTo(cx + 8, ey + 28);
+        ctx.lineTo(cx + 8, ey + 38);
+        ctx.stroke();
+
+        // belly outline
+        ctx.beginPath();
+        ctx.ellipse(cx, ey + 24, 8, 5, 0, 0, Math.PI*2);
+        ctx.stroke();
+
+        ctx.lineWidth = 2;
+    }
+}
+
+// slim player drawing
+function drawPlayer() {
+    const px = player.x + TILE / 2;
+    const py = player.y;
+    const t = player.animTick;
+    ctx.strokeStyle = '#3498db';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.arc(px, py + 6, 5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(px, py + 11);
+    ctx.lineTo(px, py + 22);
+    ctx.stroke();
+    if (player.state === 'run') {
+        ctx.beginPath();
+        ctx.moveTo(px, py + 15); ctx.lineTo(px-6, py+20);
+        ctx.moveTo(px, py + 15); ctx.lineTo(px+6, py+20);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(px, py + 22); ctx.lineTo(px-5, py+30);
+        ctx.moveTo(px, py + 22); ctx.lineTo(px+5, py+30);
+        ctx.stroke();
+    } else {
+        ctx.beginPath();
+        ctx.moveTo(px-6, py+17); ctx.lineTo(px+6, py+17);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(px, py+22); ctx.lineTo(px-6, py+31);
+        ctx.moveTo(px, py+22); ctx.lineTo(px+6, py+31);
+        ctx.stroke();
+    }
+}
+
+// player update
+function update() {
+    if (!gameActive) return;
+    if (gameWon) return;
+
+    if (!timerStart) {
+        const anyMove = keys['ArrowLeft'] || keys['ArrowRight'] || keys['ArrowUp'] || keys['ArrowDown'];
+        if (anyMove) timerStart = Date.now();
+    }
+
+    let cx = Math.floor((player.x + TILE / 2) / TILE);
+    let cy = Math.floor((player.y + TILE / 2) / TILE);
+    
+    let currentTile = getTile(cx, cy);
+    let tileBelow = getTile(cx, Math.floor((player.y + TILE + 1) / TILE));
+
+    let canStand = (tileBelow === 1 || tileBelow === 5 || tileBelow === 2);
+    let onLadder = (currentTile === 2);
+    let onBar = (currentTile === 3);
+
+    if (!onLadder && !onBar && !canStand) {
+        player.isFalling = true;
+        player.y += 4;
+    } else {
+        player.isFalling = false;
+        if (player.y % 4 !== 0) player.y = Math.round(player.y / 4) * 4;
+    }
+
+    if (!player.isFalling) {
+        if (keys['ArrowLeft']) {
+            let nextX = player.x - player.speed;
+            let tx = Math.floor(nextX / TILE);
+            let ty = Math.floor((player.y + 4) / TILE);
+            let ty2 = Math.floor((player.y + TILE - 4) / TILE);
+            if (getTile(tx, ty) !== 1 && getTile(tx, ty2) !== 1 && getTile(tx, ty) !== 5) {
+                player.x = nextX;
+            }
+        }
+        if (keys['ArrowRight']) {
+            let nextX = player.x + player.speed;
+            let tx = Math.floor((nextX + TILE - 1) / TILE);
+            let ty = Math.floor((player.y + 4) / TILE);
+            let ty2 = Math.floor((player.y + TILE - 4) / TILE);
+            if (getTile(tx, ty) !== 1 && getTile(tx, ty2) !== 1 && getTile(tx, ty) !== 5) {
+                player.x = nextX;
+            }
+        }
+        if (keys['ArrowUp'] && (currentTile === 2 || getTile(cx, Math.floor((player.y + TILE - 1) / TILE)) === 2)) {
+            player.y -= player.speed;
+            player.x = cx * TILE;
+        }
+        if (keys['ArrowDown'] && (currentTile === 2 || tileBelow === 2)) {
+            player.y += player.speed;
+            player.x = cx * TILE;
+        }
+    }
+
+    const isMovingH = (keys['ArrowLeft'] || keys['ArrowRight']) && !player.isFalling && !onBar;
+    if (keys['ArrowLeft']) player.facing = 'left';
+    if (keys['ArrowRight']) player.facing = 'right';
+    if (onBar) { player.state = 'bar'; player.animTick++; }
+    else if (onLadder && (keys['ArrowUp'] || keys['ArrowDown'])) { player.state = 'climb'; player.animTick++; }
+    else if (onLadder) player.state = 'climb';
+    else if (player.isFalling) player.state = 'fall';
+    else if (isMovingH) { player.state = 'run'; player.animTick++; }
+    else player.state = 'idle';
+
+    // Gold collection
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            if (map[r] && map[r][c] === 4) {
+                let gx = c * TILE;
+                let gy = r * TILE;
+                if (player.x < gx + TILE && player.x + TILE > gx &&
+                    player.y < gy + TILE && player.y + TILE > gy) {
+                    map[r][c] = 0;
+                    player.gold++;
+                    goldUI.innerText = player.gold;
+                    let target = parseInt(goldTargetUI.innerText);
+                    if (player.gold >= target) {
+                        timerEnd = Date.now();
+                        gameWon = true;
+                        const finalTime = timerEnd - (timerStart || timerEnd);
+                        levelTimes[currentLevel-1] = finalTime;
+                        showLevelWin(finalTime);
+                    }
+                }
+            }
+        }
+    }
+
+    moveEnemies();
+}
+
+function draw() {
+    if (timerStart && !gameWon && gameActive) {
+        timerUI.textContent = formatTime(Date.now() - timerStart);
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // draw map
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            let t = map[r]?.[c];
+            if (t === undefined) continue;
+            let x = c * TILE;
+            let y = r * TILE;
+            if (t === 1) {
+                ctx.fillStyle = '#a52a2a';
+                ctx.fillRect(x + 1, y + 1, TILE - 2, TILE - 2);
+                ctx.fillStyle = '#631919';
+                ctx.fillRect(x + 2, y + 14, TILE - 4, 4);
+            } else if (t === 5) {
+                ctx.fillStyle = '#444';
+                ctx.fillRect(x, y, TILE, TILE);
+            } else if (t === 2) {
+                ctx.strokeStyle = '#00FF00';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x + 8, y, TILE - 16, TILE);
+                for (let i = 4; i < TILE; i += 8) {
+                    ctx.beginPath(); ctx.moveTo(x + 8, y + i); ctx.lineTo(x + TILE - 8, y + i); ctx.stroke();
+                }
+            } else if (t === 3) {
+                ctx.fillStyle = '#bdc3c7';
+                ctx.fillRect(x, y + 4, TILE, 4);
+            } else if (t === 4) {
+                ctx.fillStyle = '#f1c40f';
+                ctx.beginPath();
+                ctx.arc(x + 16, y + 16, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.stroke();
+            }
+        }
+    }
+
+    drawEnemies(); 
+    drawPlayer();
+
+    update();
+    requestAnimationFrame(draw);
+}
+
+nextBtn.addEventListener('click', () => {
+    if (currentLevel < TOTAL_LEVELS) {
+        currentLevel++;
+        loadLevel(currentLevel);
+    } else {
+        winScreen.style.display = 'none';
+        let totalMs = levelTimes.reduce((acc, t) => acc + t, 0);
+        let finalTop10 = recordFinalTotal(totalMs);
+        let finalLbDiv = document.getElementById('final-leaderboard');
+        finalLbDiv.innerHTML = '<div style="color:gold;">Top 10 total times</div>' +
+            finalTop10.map((t, i) => `<div>${i+1}. ${formatTime(t)}</div>`).join('');
+        finalScreen.style.display = 'flex';
+    }
+});
+
+loadLevel(1);
+window.onload = () => { draw(); };
+</script>
+</body>
+</html>

@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Lode Runner: Final Robust Edition</title>
+    <style>
+        body { background-color: #111; color: white; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
+        #game-container { border: 4px solid #555; background-color: #000; position: relative; box-shadow: 0 0 20px #000; }
+        .hud { width: 640px; display: flex; justify-content: space-between; padding: 10px 0; font-size: 22px; color: #ffd700; text-transform: uppercase; }
+        #win-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 10; gap: 6px; }
+        #win-screen h1 { color: #ffd700; font-size: 32px; margin: 0 0 4px; }
+        #win-time { color: #fff; font-size: 22px; margin: 0; }
+        #leaderboard { color: #aaa; font-size: 15px; text-align: left; min-width: 200px; margin: 8px 0; }
+        #leaderboard .lb-title { color: #ffd700; font-size: 16px; margin-bottom: 6px; letter-spacing: 1px; }
+        #leaderboard .lb-entry { padding: 1px 0; }
+        #leaderboard .lb-new { color: #2ecc71; font-weight: bold; }
+        #win-screen button { font-family: 'Courier New', monospace; background: #ffd700; color: #000; border: none; padding: 10px 32px; font-size: 17px; cursor: pointer; text-transform: uppercase; margin-top: 8px; letter-spacing: 1px; }
+        #gameover-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 10; gap: 12px; }
+        #gameover-screen h1 { color: #e74c3c; font-size: 36px; margin: 0; }
+        #gameover-screen p { color: #aaa; font-size: 16px; margin: 0; }
+        #gameover-screen button { font-family: 'Courier New', monospace; background: #e74c3c; color: #fff; border: none; padding: 10px 32px; font-size: 17px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
+    </style>
+</head>
+<body>
+
+    <div class="hud">
+        <span>Gold: <span id="gold-ui">0</span> / 6</span>
+        <span id="timer-ui">—</span>
+        <span>Level 1</span>
+    </div>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="640" height="480"></canvas>
+        <div id="gameover-screen">
+            <h1>CAUGHT!</h1>
+            <p>You were captured by a guard.</p>
+            <button onclick="location.reload()">TRY AGAIN</button>
+        </div>
+        <div id="win-screen">
+            <h1>MISSION COMPLETE</h1>
+            <p id="win-time"></p>
+            <div id="leaderboard"></div>
+            <button onclick="location.reload()">PLAY AGAIN</button>
+        </div>
+    </div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const goldUI = document.getElementById('gold-ui');
+const winScreen = document.getElementById('win-screen');
+const timerUI = document.getElementById('timer-ui');
+
+const LEVEL_KEY = 'loderunner_level1_times';
+let timerStart = null;
+let timerEnd = null;
+let gameWon = false;
+let gameLost = false;
+
+function formatTime(ms) {
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    const h = Math.floor((ms % 1000) / 100);
+    return `${m}:${String(s).padStart(2, '0')}.${h}`;
+}
+
+function loadTimes() {
+    try { return JSON.parse(localStorage.getItem(LEVEL_KEY)) || []; }
+    catch { return []; }
+}
+
+function recordTime(ms) {
+    const times = loadTimes();
+    times.push(ms);
+    times.sort((a, b) => a - b);
+    const top10 = times.slice(0, 10);
+    localStorage.setItem(LEVEL_KEY, JSON.stringify(top10));
+    const rank = top10.indexOf(ms);
+    return { times: top10, rank };
+}
+
+function showWinScreen(ms) {
+    timerUI.textContent = formatTime(ms);
+    document.getElementById('win-time').textContent = `Your time: ${formatTime(ms)}`;
+    const { times, rank } = recordTime(ms);
+    const lb = document.getElementById('leaderboard');
+    lb.innerHTML = '<div class="lb-title">Best Times — Level 1</div>' +
+        times.map((t, i) => {
+            const cls = (i === rank) ? ' lb-new' : '';
+            return `<div class="lb-entry${cls}">${i + 1}. ${formatTime(t)}</div>`;
+        }).join('');
+    winScreen.style.display = 'flex';
+}
+
+const TILE = 32;
+const ROWS = 15;
+const COLS = 20;
+
+// 0:Empty, 1:Brick, 2:Ladder, 3:Bar, 4:Gold, 5:Solid
+let map = [
+    [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+    [5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,5],
+    [5,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,2,5],
+    [5,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,2,0,2,5],
+    [5,0,0,4,0,0,0,0,2,0,0,4,0,0,0,0,2,0,2,5],
+    [5,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,2,5],
+    [5,0,0,0,0,2,0,0,2,0,0,0,0,0,2,0,0,0,2,5],
+    [5,0,3,3,3,2,3,3,2,3,3,3,3,3,2,3,3,3,2,5],
+    [5,0,0,0,0,2,0,0,2,0,0,0,0,0,2,0,0,4,2,5],
+    [5,1,1,2,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,5],
+    [5,0,0,2,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,5],
+    [5,0,4,2,0,4,0,0,0,2,0,0,0,0,0,1,1,1,1,5],
+    [5,1,1,2,1,1,1,2,1,1,1,1,2,1,1,1,0,0,0,5],
+    [5,0,0,2,0,0,0,2,0,0,0,0,2,0,0,0,0,0,0,5],
+    [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5]
+];
+
+let player = {
+    x: TILE * 1,
+    y: TILE * 13,
+    speed: 3,
+    gold: 0,
+    isFalling: false,
+    state: 'idle',
+    facing: 'right',
+    animTick: 0
+};
+
+let npcs = [
+    { x: TILE * 10, y: TILE * 4, speed: 1.5, isFalling: false, state: 'idle', facing: 'left', animTick: 0 },
+    { x: TILE * 16, y: TILE * 10, speed: 1.5, isFalling: false, state: 'idle', facing: 'left', animTick: 0 }
+];
+
+const keys = {};
+window.addEventListener('keydown', e => keys[e.code] = true);
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+function getTile(tx, ty) {
+    if (ty < 0 || ty >= ROWS || tx < 0 || tx >= COLS) return 5;
+    return map[ty][tx];
+}
+
+function update() {
+    // Start timer on first movement
+    if (!timerStart) {
+        const anyMove = keys['ArrowLeft'] || keys['ArrowRight'] || keys['ArrowUp'] || keys['ArrowDown'];
+        if (anyMove) timerStart = Date.now();
+    }
+
+    // Current Grid Position (Center-based)
+    let cx = Math.floor((player.x + TILE / 2) / TILE);
+    let cy = Math.floor((player.y + TILE / 2) / TILE);
+    
+    let currentTile = getTile(cx, cy);
+    let tileBelow = getTile(cx, Math.floor((player.y + TILE + 1) / TILE));
+
+    // 1. GRAVITY CHECK
+    let canStand = (tileBelow === 1 || tileBelow === 5 || tileBelow === 2);
+    let onLadder = (currentTile === 2);
+    let onBar = (currentTile === 3);
+
+    if (!onLadder && !onBar && !canStand) {
+        player.isFalling = true;
+        player.y += 4;
+    } else {
+        player.isFalling = false;
+        // Snap to grid Y if we just stopped falling
+        if (player.y % 4 !== 0) player.y = Math.round(player.y / 4) * 4;
+    }
+
+    // 2. MOVEMENT (Only if not falling)
+    if (!player.isFalling) {
+        // Horizontal
+        if (keys['ArrowLeft']) {
+            let nextX = player.x - player.speed;
+            let tx = Math.floor(nextX / TILE);
+            let ty = Math.floor((player.y + 4) / TILE);
+            let ty2 = Math.floor((player.y + TILE - 4) / TILE);
+            if (getTile(tx, ty) !== 1 && getTile(tx, ty2) !== 1 && getTile(tx, ty) !== 5) {
+                player.x = nextX;
+            }
+        }
+        if (keys['ArrowRight']) {
+            let nextX = player.x + player.speed;
+            let tx = Math.floor((nextX + TILE - 1) / TILE);
+            let ty = Math.floor((player.y + 4) / TILE);
+            let ty2 = Math.floor((player.y + TILE - 4) / TILE);
+            if (getTile(tx, ty) !== 1 && getTile(tx, ty2) !== 1 && getTile(tx, ty) !== 5) {
+                player.x = nextX;
+            }
+        }
+
+        // Vertical (Ladders)
+        if (keys['ArrowUp'] && (currentTile === 2 || getTile(cx, Math.floor((player.y + TILE - 1) / TILE)) === 2)) {
+            player.y -= player.speed;
+            player.x = cx * TILE; // Snap to ladder column
+        }
+        if (keys['ArrowDown'] && (currentTile === 2 || tileBelow === 2)) {
+            player.y += player.speed;
+            player.x = cx * TILE; // Snap to ladder column
+        }
+    }
+
+    // 2b. ANIMATION STATE
+    const isMovingH = (keys['ArrowLeft'] || keys['ArrowRight']) && !player.isFalling && !onBar;
+    if (keys['ArrowLeft']) player.facing = 'left';
+    if (keys['ArrowRight']) player.facing = 'right';
+
+    if (onBar) {
+        player.state = 'bar';
+        player.animTick++;
+    } else if (onLadder && (keys['ArrowUp'] || keys['ArrowDown'])) {
+        player.state = 'climb';
+        player.animTick++;
+    } else if (onLadder) {
+        player.state = 'climb';
+    } else if (player.isFalling) {
+        player.state = 'fall';
+    } else if (isMovingH) {
+        player.state = 'run';
+        player.animTick++;
+    } else {
+        player.state = 'idle';
+    }
+
+    // 3. GOLD COLLECTION (Improved Detection)
+    // Check all tiles the player currently overlaps
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            if (map[r][c] === 4) {
+                let gx = c * TILE;
+                let gy = r * TILE;
+                // Simple AABB collision
+                if (player.x < gx + TILE && player.x + TILE > gx &&
+                    player.y < gy + TILE && player.y + TILE > gy) {
+                    map[r][c] = 0;
+                    player.gold++;
+                    goldUI.innerText = player.gold;
+                    if (player.gold >= 6) {
+                        timerEnd = Date.now();
+                        gameWon = true;
+                        const finalTime = timerEnd - (timerStart || timerEnd);
+                        showWinScreen(finalTime);
+                    }
+                }
+            }
+        }
+    }
+}
+
+function drawStickFigure(entity, color) {
+    const px = entity.x + TILE / 2;
+    const py = entity.y;
+    const t = entity.animTick;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if (entity.state === 'bar') {
+        const sway = Math.sin(t * 0.2) * 3;
+        ctx.beginPath();
+        ctx.arc(px, py + 14, 5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(px - 6, py + 9);  ctx.lineTo(px - 6, py + 4);
+        ctx.moveTo(px + 6, py + 9);  ctx.lineTo(px + 6, py + 4);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(px, py + 19);
+        ctx.lineTo(px + sway * 0.3, py + 26);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(px + sway * 0.3, py + 26);
+        ctx.lineTo(px - 4 + sway, py + 31);
+        ctx.moveTo(px + sway * 0.3, py + 26);
+        ctx.lineTo(px + 4 + sway, py + 31);
+        ctx.stroke();
+    } else {
+        ctx.beginPath();
+        ctx.arc(px, py + 6, 5, 0, Math.PI * 2);
+        ctx.stroke();
+
+        if (entity.state === 'run') {
+            const phase = Math.sin(t * 0.35);
+            const lean = entity.facing === 'right' ? 1 : -1;
+            ctx.beginPath();
+            ctx.moveTo(px, py + 11);
+            ctx.lineTo(px + lean, py + 22);
+            ctx.stroke();
+            const armSwing = phase * 6;
+            ctx.beginPath();
+            ctx.moveTo(px, py + 15);  ctx.lineTo(px - armSwing, py + 21);
+            ctx.moveTo(px, py + 15);  ctx.lineTo(px + armSwing, py + 21);
+            ctx.stroke();
+            const legSwing = phase * 8;
+            ctx.beginPath();
+            ctx.moveTo(px + lean, py + 22);  ctx.lineTo(px + lean - legSwing, py + 31);
+            ctx.moveTo(px + lean, py + 22);  ctx.lineTo(px + lean + legSwing, py + 31);
+            ctx.stroke();
+
+        } else if (entity.state === 'climb') {
+            const phase = Math.sin(t * 0.3);
+            ctx.beginPath();
+            ctx.moveTo(px, py + 11);
+            ctx.lineTo(px, py + 22);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px, py + 14);
+            ctx.lineTo(px - 7, py + 11 + (phase > 0 ? 4 : 0));
+            ctx.moveTo(px, py + 14);
+            ctx.lineTo(px + 7, py + 11 + (phase > 0 ? 0 : 4));
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px, py + 22);
+            ctx.lineTo(px - 4, py + 28 + (phase > 0 ? 3 : 0));
+            ctx.moveTo(px, py + 22);
+            ctx.lineTo(px + 4, py + 28 + (phase > 0 ? 0 : 3));
+            ctx.stroke();
+
+        } else if (entity.state === 'fall') {
+            ctx.beginPath();
+            ctx.moveTo(px, py + 11);
+            ctx.lineTo(px, py + 22);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px - 11, py + 13);
+            ctx.lineTo(px + 11, py + 13);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px, py + 22);
+            ctx.lineTo(px - 4, py + 29);
+            ctx.moveTo(px, py + 22);
+            ctx.lineTo(px + 4, py + 29);
+            ctx.stroke();
+
+        } else {
+            ctx.beginPath();
+            ctx.moveTo(px, py + 11);
+            ctx.lineTo(px, py + 22);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px - 7, py + 17);
+            ctx.lineTo(px + 7, py + 17);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px, py + 22);  ctx.lineTo(px - 6, py + 31);
+            ctx.moveTo(px, py + 22);  ctx.lineTo(px + 6, py + 31);
+            ctx.stroke();
+        }
+    }
+}
+
+function updateNPC(npc) {
+    let cx = Math.floor((npc.x + TILE / 2) / TILE);
+    let cy = Math.floor((npc.y + TILE / 2) / TILE);
+    let currentTile = getTile(cx, cy);
+    let tileBelow = getTile(cx, Math.floor((npc.y + TILE + 1) / TILE));
+    let canStand = (tileBelow === 1 || tileBelow === 5 || tileBelow === 2);
+    let onLadder = (currentTile === 2);
+    let onBar = (currentTile === 3);
+
+    // Gravity (same as player)
+    if (!onLadder && !onBar && !canStand) {
+        npc.isFalling = true;
+        npc.y += 4;
+    } else {
+        npc.isFalling = false;
+        if (npc.y % 4 !== 0) npc.y = Math.round(npc.y / 4) * 4;
+    }
+
+    if (!npc.isFalling) {
+        const dx = player.x - npc.x;
+        const dy = player.y - npc.y;
+        const S = npc.speed;
+        let moveLeft = false, moveRight = false, moveUp = false, moveDown = false;
+
+        if (onBar) {
+            // Traverse bar horizontally toward player
+            moveRight = dx > 1;
+            moveLeft = dx < -1;
+        } else if (onLadder) {
+            // Prioritize climbing toward player's row
+            if (dy < -TILE / 2) moveUp = true;
+            else if (dy > TILE / 2 && tileBelow === 2) moveDown = true;
+            else { moveRight = dx > 1; moveLeft = dx < -1; }
+        } else {
+            // On solid ground: chase horizontally
+            moveRight = dx > 1;
+            moveLeft = dx < -1;
+            // Use ladder below to descend if player is lower
+            if (dy > TILE && tileBelow === 2) moveDown = true;
+            // Use ladder above to ascend if player is higher
+            if (dy < -TILE && getTile(cx, cy - 1) === 2) moveUp = true;
+        }
+
+        if (moveLeft) {
+            let nextX = npc.x - S;
+            let tx = Math.floor(nextX / TILE);
+            let ty = Math.floor((npc.y + 4) / TILE);
+            let ty2 = Math.floor((npc.y + TILE - 4) / TILE);
+            if (getTile(tx, ty) !== 1 && getTile(tx, ty2) !== 1 && getTile(tx, ty) !== 5) {
+                npc.x = nextX; npc.facing = 'left';
+            }
+        } else if (moveRight) {
+            let nextX = npc.x + S;
+            let tx = Math.floor((nextX + TILE - 1) / TILE);
+            let ty = Math.floor((npc.y + 4) / TILE);
+            let ty2 = Math.floor((npc.y + TILE - 4) / TILE);
+            if (getTile(tx, ty) !== 1 && getTile(tx, ty2) !== 1 && getTile(tx, ty) !== 5) {
+                npc.x = nextX; npc.facing = 'right';
+            }
+        }
+        if (moveUp && (currentTile === 2 || getTile(cx, Math.floor((npc.y + TILE - 1) / TILE)) === 2)) {
+            npc.y -= S; npc.x = cx * TILE;
+        }
+        if (moveDown && (currentTile === 2 || tileBelow === 2)) {
+            npc.y += S; npc.x = cx * TILE;
+        }
+    }
+
+    // Animation state
+    if (onBar)          { npc.state = 'bar';   npc.animTick++; }
+    else if (onLadder)  { npc.state = 'climb'; npc.animTick++; }
+    else if (npc.isFalling) { npc.state = 'fall'; }
+    else if (Math.abs(player.x - npc.x) > 2) { npc.state = 'run'; npc.animTick++; }
+    else                { npc.state = 'idle'; }
+}
+
+function checkCapture() {
+    for (const npc of npcs) {
+        const overlapX = player.x < npc.x + TILE - 8 && player.x + TILE - 8 > npc.x;
+        const overlapY = player.y < npc.y + TILE - 8 && player.y + TILE - 8 > npc.y;
+        if (overlapX && overlapY) {
+            gameLost = true;
+            document.getElementById('gameover-screen').style.display = 'flex';
+        }
+    }
+}
+
+function draw() {
+    // Tick the live timer display
+    if (timerStart && !gameWon) {
+        timerUI.textContent = formatTime(Date.now() - timerStart);
+    }
+
+    if (gameWon || gameLost) { requestAnimationFrame(draw); return; }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw Map
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            let t = map[r][c];
+            let x = c * TILE;
+            let y = r * TILE;
+
+            if (t === 1) {
+                ctx.fillStyle = '#a52a2a';
+                ctx.fillRect(x + 1, y + 1, TILE - 2, TILE - 2);
+                ctx.fillStyle = '#631919';
+                ctx.fillRect(x + 2, y + 14, TILE - 4, 4);
+            } else if (t === 5) {
+                ctx.fillStyle = '#444';
+                ctx.fillRect(x, y, TILE, TILE);
+            } else if (t === 2) {
+                ctx.strokeStyle = '#00FF00';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x + 8, y, TILE - 16, TILE);
+                for (let i = 4; i < TILE; i += 8) {
+                    ctx.beginPath(); ctx.moveTo(x + 8, y + i); ctx.lineTo(x + TILE - 8, y + i); ctx.stroke();
+                }
+            } else if (t === 3) {
+                ctx.fillStyle = '#bdc3c7';
+                ctx.fillRect(x, y + 4, TILE, 4);
+            } else if (t === 4) {
+                // Gold Glow
+                ctx.fillStyle = '#f1c40f';
+                ctx.beginPath();
+                ctx.arc(x + 16, y + 16, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.stroke();
+            }
+        }
+    }
+
+    // Draw NPCs (red) then player (blue) on top
+    for (const npc of npcs) drawStickFigure(npc, '#e74c3c');
+    drawStickFigure(player, '#3498db');
+
+    update();
+    for (const npc of npcs) updateNPC(npc);
+    checkCapture();
+    requestAnimationFrame(draw);
+}
+
+window.onload = draw;
+</script>
+</body>
+</html>

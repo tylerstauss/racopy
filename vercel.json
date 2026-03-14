@@ -1,0 +1,9 @@
+{
+  "redirects": [
+    {
+      "source": "/racopy.html",
+      "destination": "/racopy/racopy.html",
+      "permanent": true
+    }
+  ]
+}

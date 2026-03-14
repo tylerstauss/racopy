@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAME ARCADE</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #050505;
+  color: #00ff41;
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,255,65,0.015) 2px,
+    rgba(0,255,65,0.015) 4px
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 700px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 48px;
+}
+
+header {
+  text-align: center;
+}
+
+h1 {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 900;
+  font-size: clamp(28px, 6vw, 52px);
+  letter-spacing: 8px;
+  color: #00ff41;
+  text-shadow: 0 0 20px #00ff4188, 0 0 40px #00ff4144;
+  text-transform: uppercase;
+}
+
+.subtitle {
+  margin-top: 10px;
+  font-size: 12px;
+  letter-spacing: 4px;
+  color: #446644;
+  text-transform: uppercase;
+}
+
+.games {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.game-btn {
+  display: block;
+  width: 100%;
+  padding: 22px 28px;
+  background: linear-gradient(135deg, #0d1a0d, #050f05);
+  border: 1px solid #1a4d1a;
+  color: #00ff41;
+  text-decoration: none;
+  font-family: 'Share Tech Mono', monospace;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.game-btn::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(0,255,65,0.06), transparent);
+  transition: left 0.4s ease;
+}
+
+.game-btn:hover::before {
+  left: 100%;
+}
+
+.game-btn:hover {
+  border-color: #00ff41;
+  box-shadow: 0 0 20px rgba(0,255,65,0.2), inset 0 0 20px rgba(0,255,65,0.04);
+}
+
+.game-btn:active {
+  background: linear-gradient(135deg, #102010, #081508);
+}
+
+.game-tag {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: #336633;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.game-title {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  font-size: clamp(14px, 3vw, 20px);
+  letter-spacing: 2px;
+  color: #00ff41;
+}
+
+.game-desc {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #446644;
+  letter-spacing: 1px;
+}
+
+.game-btn .arrow {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 20px;
+  color: #1a4d1a;
+  transition: color 0.2s, right 0.2s;
+}
+
+.game-btn:hover .arrow {
+  color: #00ff41;
+  right: 18px;
+}
+
+/* Red Alert gets red accent */
+.game-btn.red {
+  border-color: #3d0000;
+  background: linear-gradient(135deg, #1a0000, #0d0505);
+}
+.game-btn.red .game-tag { color: #660000; }
+.game-btn.red .game-title { color: #ff2020; text-shadow: 0 0 12px #ff000066; }
+.game-btn.red .game-desc { color: #553333; }
+.game-btn.red .arrow { color: #3d0000; }
+.game-btn.red:hover {
+  border-color: #cc0000;
+  box-shadow: 0 0 20px rgba(204,0,0,0.25), inset 0 0 20px rgba(204,0,0,0.05);
+}
+.game-btn.red:hover .arrow { color: #cc0000; }
+
+/* Gold accent for loderunner */
+.game-btn.gold {
+  border-color: #3d3000;
+  background: linear-gradient(135deg, #1a1400, #0d0e05);
+}
+.game-btn.gold .game-tag { color: #665500; }
+.game-btn.gold .game-title { color: #ffd700; text-shadow: 0 0 12px #ffdd0066; }
+.game-btn.gold .game-desc { color: #555533; }
+.game-btn.gold .arrow { color: #3d3000; }
+.game-btn.gold:hover {
+  border-color: #ccaa00;
+  box-shadow: 0 0 20px rgba(204,170,0,0.25), inset 0 0 20px rgba(204,170,0,0.05);
+}
+.game-btn.gold:hover .arrow { color: #ffd700; }
+
+footer {
+  font-size: 10px;
+  color: #223322;
+  letter-spacing: 2px;
+  text-align: center;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>ARCADE</h1>
+    <p class="subtitle">Select a game to play</p>
+  </header>
+
+  <nav class="games">
+    <a class="game-btn red" href="/racopy/racopy.html">
+      <div class="game-tag">Strategy · Multiplayer</div>
+      <div class="game-title">Red Alert 2</div>
+      <div class="game-desc">Real-time strategy — build units and destroy your enemy</div>
+      <span class="arrow">▶</span>
+    </a>
+
+    <a class="game-btn gold" href="/robber/loderunner.html">
+      <div class="game-tag">Platformer · Puzzle</div>
+      <div class="game-title">Lode Runner</div>
+      <div class="game-desc">Collect all gold while evading guards — classic 1983 arcade</div>
+      <span class="arrow">▶</span>
+    </a>
+
+    <a class="game-btn gold" href="/robber/robber.html">
+      <div class="game-tag">Platformer · Puzzle</div>
+      <div class="game-title">Lode Runner II</div>
+      <div class="game-desc">Alternate build — slower NPCs, improved collision</div>
+      <span class="arrow">▶</span>
+    </a>
+
+    <a class="game-btn" href="/shooting/shooting.html">
+      <div class="game-tag">Shooter · Action</div>
+      <div class="game-title">Goldenrod Library</div>
+      <div class="game-desc">N64-style top-down shooter — clear the library map</div>
+      <span class="arrow">▶</span>
+    </a>
+  </nav>
+
+  <footer>RACOPY.VERCEL.APP</footer>
+</div>
+</body>
+</html>
