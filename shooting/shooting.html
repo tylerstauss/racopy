@@ -175,7 +175,7 @@
             <div class="title">LIBRARY STACKS</div>
             <div style="color:#8bc34a; margin:15px;">Goldeneye-style library infiltration</div>
             <div style="color:#aaa; font-size:13px; margin:15px;">W/S Forward·Back &nbsp;·&nbsp; A/D Strafe &nbsp;·&nbsp; ←→ Turn</div>
-            <div style="color:#aaa; font-size:13px; margin-bottom:20px;">Space / Click to Fire &nbsp;·&nbsp; Mouse Look (click canvas)</div>
+            <div style="color:#aaa; font-size:13px; margin-bottom:20px;">Space / Click to Fire &nbsp;·&nbsp; Mouse Look &nbsp;·&nbsp; 1-4 Switch Weapon</div>
             <button onclick="startGame()" style="font-size:20px; padding:10px 30px;">ENTER</button>
         </div>
     </div>
@@ -198,8 +198,8 @@
                     <span id="healthDisplay">100</span>
                 </div>
                 <div>
-                    <span>PP7</span>
-                    <span id="ammoDisplay" style="margin-left:10px; font-family:monospace;">&#9608;&#9608; 24/24</span>
+                    <span id="gunName">PP7</span>
+                    <span id="ammoDisplay" style="margin-left:10px; font-family:monospace;">&#9608;&#9608;&#9608;&#9608;&#9608;&#9608; 24</span>
                 </div>
                 <div>
                     <span id="enemyCount">&#128101; 5</span>
@@ -296,6 +296,7 @@
     // ---- GAME STATE --------------------------------------------------------
     let gameRunning = false;
     let damageFlash = 0;
+    let regenTimer = 0;
     let gun = { recoil: 0, muzzleFlash: 0, cooldown: 0 };
 
     let player = {
@@ -303,8 +304,13 @@
         y: 42 * CS,
         angle: -Math.PI / 2, // facing north
         health: 100,
-        ammo: 24,
-        maxAmmo: 24,
+        guns: {
+            pp7:     { has: true,  ammo: 24 },
+            kf7:     { has: false, ammo: 0  },
+            shotgun: { has: false, ammo: 0  },
+            sniper:  { has: false, ammo: 0  },
+        },
+        currentGun: 'pp7',
         bobPhase: 0,
         bobOffset: 0
     };
@@ -354,6 +360,38 @@
     let loopId = 0;
     let bulletTrails = [];
 
+    // ---- GUN DEFINITIONS ---------------------------------------------------
+    const GUN_DEFS = {
+        pp7:     { name: 'PP7',        damage: 50,  cooldown: 12, magSize: 24, spread: 0.18 },
+        kf7:     { name: 'KF7 SOVIET', damage: 25,  cooldown:  5, magSize: 30, spread: 0.16 },
+        shotgun: { name: 'SHOTGUN',    damage: 70,  cooldown: 45, magSize:  8, spread: 0.40 },
+        sniper:  { name: 'SNIPER',     damage: 100, cooldown: 65, magSize:  5, spread: 0.05 },
+    };
+
+    // ---- PICKUPS -----------------------------------------------------------
+    const PICKUP_RESPAWN_GUN  = 1800; // 30 s at 60 fps
+    const PICKUP_RESPAWN_AMMO = 600;  // 10 s at 60 fps
+    let pickups = [];
+    let pickupPulse = 0;
+
+    function initPickups() {
+        pickups = [
+            { type: 'gun',  gun: 'kf7',     x: 10.5*CS, y:  5.5*CS, active: true, timer: 0 },
+            { type: 'gun',  gun: 'shotgun', x: 50.5*CS, y:  5.5*CS, active: true, timer: 0 },
+            { type: 'gun',  gun: 'sniper',  x:  5.5*CS, y: 38.5*CS, active: true, timer: 0 },
+            { type: 'ammo', gun: 'pp7',     x: 20.5*CS, y: 22.5*CS, active: true, timer: 0 },
+            { type: 'ammo', gun: 'pp7',     x: 45.5*CS, y: 38.5*CS, active: true, timer: 0 },
+            { type: 'ammo', gun: 'kf7',     x: 30.5*CS, y:  5.5*CS, active: true, timer: 0 },
+            { type: 'ammo', gun: 'shotgun', x: 55.5*CS, y: 22.5*CS, active: true, timer: 0 },
+            { type: 'ammo', gun: 'sniper',  x: 30.5*CS, y: 38.5*CS, active: true, timer: 0 },
+        ];
+    }
+
+    function switchGun(id) {
+        if (!gameRunning) return;
+        if (player.guns[id] && player.guns[id].has) player.currentGun = id;
+    }
+
     // ---- INPUT -------------------------------------------------------------
     canvas.addEventListener('click', () => {
         if (!document.pointerLockElement) {
@@ -374,6 +412,10 @@
         if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
         if ((e.code === 'ControlLeft' || e.code === 'ControlRight') && gameRunning) shoot();
         if (e.code === 'Space' && gameRunning) shoot();
+        if (e.code === 'Digit1') switchGun('pp7');
+        if (e.code === 'Digit2') switchGun('kf7');
+        if (e.code === 'Digit3') switchGun('shotgun');
+        if (e.code === 'Digit4') switchGun('sniper');
     });
     window.addEventListener('keyup', e => { keys[e.code] = false; });
 
@@ -455,63 +497,35 @@
                 const pidx = (y * CW + x) << 2;
 
                 if (y >= wTop[x] && y < wBot[x] && wBot[x] > wTop[x]) {
-                    // WALL — textured stone or bookshelf
+                    // WALL — two flat panels: top=gray, bottom=green
                     const wallY = (y - wTopRaw[x]) / wH[x];
-                    const wx = wTexX[x];
                     const shade = Math.max(0.05, 1.0 - zBuffer[x] * 0.018);
                     const sD = wSide[x] ? 0.68 : 1.0;
-                    let r, g, b;
-                    if (wTile[x] === 1) {
-                        // Two-toned masonry: grey top → green bottom with gradient
-                        const byI = Math.floor(wallY * 3);
-                        const bxR = wx * 4 + (byI % 2 === 0 ? 0 : 0.5);
-                        const bxI = Math.floor(bxR);
-                        const bxF = bxR - bxI, byF = wallY * 3 - byI;
-                        const grout = bxF < 0.07 || bxF > 0.93 || byF < 0.065 || byF > 0.935;
-                        if (grout) {
-                            r = 22; g = 24; b = 20;
-                        } else {
-                            const h = ((bxI * 73856093) ^ (byI * 19349663) ^ (wMX[x] * 5765169) ^ (wMY[x] * 2341253)) & 0xFF;
-                            const n = (h / 255) * 24 - 12;
-                            // Lerp: wallY=0 (top) = grey, wallY=1 (bottom) = green
-                            r = Math.round(116 + (52  - 116) * wallY + n * 0.5);
-                            g = Math.round(113 + (94  - 113) * wallY + n * 0.4);
-                            b = Math.round(107 + (42  - 107) * wallY + n * 0.2);
-                        }
-                    } else {
-                        // Bookshelf — colored spines
-                        const shelf = Math.floor(wallY * 4);
-                        const sF = wallY * 4 - shelf;
-                        if (sF < 0.06 || sF > 0.94) { r = 88; g = 55; b = 24; }
-                        else {
-                            const bk = Math.floor(wx * 10);
-                            const h = ((bk * 1234567) ^ (shelf * 7654321) ^ (wMX[x] * 5765169)) & 0xFF;
-                            const v = h / 255;
-                            if (v < 0.33) { r = 168; g = 42; b = 42; }
-                            else if (v < 0.66) { r = 42; g = 88; b = 145; }
-                            else { r = 132; g = 118; b = 42; }
-                        }
-                    }
                     const s = shade * sD;
+                    let r, g, b;
+                    if (wallY < 0.5) {
+                        r = 110; g = 110; b = 110; // gray top panel
+                    } else {
+                        r = 74; g = 106; b = 74;   // green bottom panel
+                    }
                     data[pidx]   = Math.round(r * s);
                     data[pidx+1] = Math.round(g * s);
                     data[pidx+2] = Math.round(b * s);
 
                 } else if (isFloor) {
-                    // FLOOR — GoldenEye beige stone tiles with grout lines (small tiles)
-                    const tfx = fx * 4, tfy = fy * 4;
-                    const tX = tfx - Math.floor(tfx);
-                    const tY = tfy - Math.floor(tfy);
-                    if (tX < 0.07 || tX > 0.93 || tY < 0.07 || tY > 0.93) {
-                        data[pidx]   = Math.round(95  * fShade);
-                        data[pidx+1] = Math.round(88  * fShade);
-                        data[pidx+2] = Math.round(72  * fShade);
+                    // FLOOR — GoldenEye beige stone tiles with grout lines
+                    const tX = fx - Math.floor(fx);
+                    const tY = fy - Math.floor(fy);
+                    if (tX < 0.055 || tX > 0.945 || tY < 0.055 || tY > 0.945) {
+                        data[pidx]   = Math.round(112 * fShade);
+                        data[pidx+1] = Math.round(102 * fShade);
+                        data[pidx+2] = Math.round(82  * fShade);
                     } else {
-                        const h = ((Math.floor(tfx) * 73856093) ^ (Math.floor(tfy) * 19349663)) & 0xFF;
-                        const base = 162 + Math.round((h / 255) * 24);
+                        const h = ((Math.floor(fx) * 73856093) ^ (Math.floor(fy) * 19349663)) & 0xFF;
+                        const base = 168 + Math.round((h / 255) * 26);
                         data[pidx]   = Math.round(base       * fShade);
-                        data[pidx+1] = Math.round((base - 12) * fShade);
-                        data[pidx+2] = Math.round((base - 34) * fShade);
+                        data[pidx+1] = Math.round((base - 13) * fShade);
+                        data[pidx+2] = Math.round((base - 37) * fShade);
                     }
 
                 } else {
@@ -558,7 +572,7 @@
             const corrDist = (distWorld / CS) * Math.cos(angleDiff);
             if (corrDist <= 0) continue;
 
-            const spriteH = Math.min(CH * 0.60, (CH / corrDist) * 1.05);
+            const spriteH = Math.min(CH * 0.95, (CH / corrDist) * 2.0);
             const spriteW = Math.round(spriteH * 0.55);
             const sx = Math.round(screenX - spriteW / 2);
             const sy = Math.round(CH / 2 + player.bobOffset - spriteH / 2);
@@ -586,275 +600,82 @@
             }
             ctx.clip();
 
-            drawHumanFigure(sx, sy, spriteW, spriteH, shade, e.type, e.state === 'flee');
+            drawHumanFigure(sx, sy, spriteW, spriteH, shade, e.type);
             ctx.restore();
         }
     }
 
-    function drawHumanFigure(sx, sy, sw, sh, shade, type, showBack) {
+    function drawHumanFigure(sx, sy, sw, sh, shade, type) {
         const s = shade;
-        const c = (r, g, b) => `rgb(${Math.round(r*s)},${Math.round(g*s)},${Math.round(b*s)})`;
+        const skin    = `rgb(${Math.round(218*s)},${Math.round(172*s)},${Math.round(132*s)})`;
+        const hair    = `rgb(${Math.round(75*s)},${Math.round(52*s)},${Math.round(28*s)})`;
+        const uniform = type === 0
+            ? `rgb(${Math.round(185*s)},${Math.round(50*s)},${Math.round(50*s)})`
+            : `rgb(${Math.round(50*s)},${Math.round(135*s)},${Math.round(50*s)})`;
+        const pants   = `rgb(${Math.round(42*s)},${Math.round(42*s)},${Math.round(55*s)})`;
+        const boot    = `rgb(${Math.round(28*s)},${Math.round(20*s)},${Math.round(14*s)})`;
 
-        // Proportions (must sum to 1.0)
-        const headH  = sh * 0.20;
-        const neckH  = sh * 0.03;
-        const torsoH = sh * 0.30;
-        const legH   = sh * 0.38;
-        const bootH  = sh * 0.09;
-        const headY  = sy;
-        const neckY  = headY + headH;
+        // Vertical sections
+        const headH  = sh * 0.18;
+        const neckH  = sh * 0.04;
+        const torsoH = sh * 0.32;
+        const legH   = sh * 0.46;
+        const neckY  = sy + headH;
         const torsoY = neckY + neckH;
         const legY   = torsoY + torsoH;
-        const bootY  = legY + legH;
 
-        const hm  = sw * 0.24;  // head margin
-        const nm  = sw * 0.36;  // neck margin
-        const bm  = sw * 0.08;  // body margin
-        const aw  = sw * 0.14;  // arm width
-        const lw  = (sw - bm*2) * 0.44;
-        const lgp = sw - bm*2 - lw*2;
+        // Horizontal margins
+        const hm = sw * 0.25; // head margin
+        const bm = sw * 0.10; // body margin
+        const nm = sw * 0.36; // neck margin
+        const lw = (sw - bm*2) * 0.42;
+        const aw = sw * 0.13; // arm width
+
+        // Hair
+        ctx.fillStyle = hair;
+        ctx.fillRect(sx + hm, sy, sw - hm*2, headH * 0.28);
+        // Skin (head)
+        ctx.fillStyle = skin;
+        ctx.fillRect(sx + hm, sy + headH * 0.28, sw - hm*2, headH * 0.72);
+        // Eyes
+        const eyeY = sy + headH * 0.50;
+        const eyeW = Math.max(1, (sw - hm*2) * 0.18);
+        const eyeH = Math.max(1, headH * 0.18);
+        ctx.fillStyle = '#111';
+        ctx.fillRect(sx + hm + (sw-hm*2)*0.15, eyeY, eyeW, eyeH);
+        ctx.fillRect(sx + hm + (sw-hm*2)*0.63, eyeY, eyeW, eyeH);
+        // Neck
+        ctx.fillStyle = skin;
+        ctx.fillRect(sx + nm, neckY, sw - nm*2, neckH);
+        // Torso
+        ctx.fillStyle = uniform;
+        ctx.fillRect(sx + bm, torsoY, sw - bm*2, torsoH);
+        // Arms
+        ctx.fillRect(sx, torsoY, aw, torsoH * 0.80);
+        ctx.fillRect(sx + sw - aw, torsoY, aw, torsoH * 0.80);
+        // Hands
+        ctx.fillStyle = skin;
+        ctx.fillRect(sx, torsoY + torsoH * 0.80, aw, torsoH * 0.20);
+        ctx.fillRect(sx + sw - aw, torsoY + torsoH * 0.80, aw, torsoH * 0.20);
+        // Legs
+        const gap = (sw - bm*2) * 0.16;
         const llx = sx + bm;
-        const lrx = llx + lw + lgp;
-
-        // Helper: draw small NPC gun in right hand (left from viewer), proportional to sprite
-        function npcGun(ax, ay) {
-            const gW=Math.max(2,sw*0.13), gH=Math.max(3,sh*0.065);
-            ctx.fillStyle=c(52,52,56); ctx.fillRect(ax,ay,gW,gH);
-            ctx.fillStyle=c(36,36,40); ctx.fillRect(ax+gW*0.2,ay-gH*0.38,gW*0.5,gH*0.42);
-            ctx.fillStyle=c(24,18,12); ctx.fillRect(ax+gW*0.05,ay+gH*0.5,gW*0.65,gH*0.6);
-            ctx.fillStyle=c(72,68,76); ctx.fillRect(ax+1,ay+1,Math.max(1,gW*0.22),gH*0.55);
-        }
-
-        if (type === 0) {
-            // === BLACK SUIT GUARD ===
-            const skR=200,skG=162,skB=124;
-            const jkR=26, jkG=26, jkB=30;
-            const ptR=20, ptG=20, ptB=26;
-            const shR=228,shG=226,shB=220;
-
-            // Hair (same front/back)
-            ctx.fillStyle=c(40,32,24); ctx.fillRect(sx+hm,headY,sw-hm*2,headH*0.32);
-            ctx.fillStyle=c(30,24,18); ctx.fillRect(sx+hm,headY,sw*0.07,headH*0.32);
-
-            if (showBack) {
-                // Back of head
-                ctx.fillStyle=c(skR-12,skG-12,skB-10); ctx.fillRect(sx+hm,headY+headH*0.30,sw-hm*2,headH*0.70);
-                ctx.fillStyle=c(skR-20,skG-20,skB-15);
-                ctx.fillRect(sx+hm-3,headY+headH*0.44,Math.max(2,sw*0.05),headH*0.28);
-                ctx.fillRect(sx+sw-hm-1,headY+headH*0.44,Math.max(2,sw*0.05),headH*0.28);
-                // Neck
-                ctx.fillStyle=c(skR-12,skG-12,skB-10); ctx.fillRect(sx+nm,neckY,sw-nm*2,neckH);
-                // White collar at back of neck
-                ctx.fillStyle=c(shR,shG,shB); ctx.fillRect(sx+nm-2,torsoY,sw-nm*2+4,torsoH*0.06);
-                // Back of jacket
-                ctx.fillStyle=c(jkR,jkG,jkB); ctx.fillRect(sx+bm,torsoY,sw-bm*2,torsoH);
-                // Back seam
-                ctx.fillStyle=c(jkR-6,jkG-6,jkB-5); ctx.fillRect(sx+sw/2-1,torsoY+torsoH*0.08,2,torsoH*0.90);
-                // Shoulder blade highlights
-                ctx.fillStyle=c(jkR+8,jkG+8,jkB+12);
-                ctx.fillRect(sx+bm+2,torsoY+torsoH*0.06,sw*0.28,torsoH*0.34);
-                ctx.fillRect(sx+sw-bm-2-sw*0.28,torsoY+torsoH*0.06,sw*0.28,torsoH*0.34);
-                // Arms (back — highlight on back edge)
-                ctx.fillStyle=c(jkR,jkG,jkB);
-                ctx.fillRect(sx,torsoY+torsoH*0.04,aw,torsoH*0.76);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.04,aw,torsoH*0.76);
-                ctx.fillStyle=c(jkR+8,jkG+8,jkB+10);
-                ctx.fillRect(sx+aw-Math.max(1,aw*0.3),torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.70);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.70);
-                ctx.fillStyle=c(shR,shG,shB);
-                ctx.fillRect(sx,torsoY+torsoH*0.76,aw,torsoH*0.10);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.76,aw,torsoH*0.10);
-                ctx.fillStyle=c(skR-10,skG-10,skB-8);
-                ctx.fillRect(sx,torsoY+torsoH*0.86,aw,torsoH*0.14);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.86,aw,torsoH*0.14);
-            } else {
-                // Front face
-                ctx.fillStyle=c(skR,skG,skB); ctx.fillRect(sx+hm,headY+headH*0.30,sw-hm*2,headH*0.70);
-                ctx.fillStyle=c(skR-14,skG-14,skB-10);
-                ctx.fillRect(sx+hm-3,headY+headH*0.44,Math.max(2,sw*0.05),headH*0.28);
-                ctx.fillRect(sx+sw-hm-1,headY+headH*0.44,Math.max(2,sw*0.05),headH*0.28);
-                ctx.fillStyle=c(skR-22,skG-22,skB-16); ctx.fillRect(sx+hm,headY+headH*0.44,sw-hm*2,headH*0.09);
-                const eyeW=Math.max(1,(sw-hm*2)*0.20),eyeH=Math.max(1,headH*0.14),eyeY=headY+headH*0.52;
-                ctx.fillStyle=c(skR-38,skG-38,skB-28);
-                ctx.fillRect(sx+hm+(sw-hm*2)*0.10,eyeY,eyeW,eyeH);
-                ctx.fillRect(sx+hm+(sw-hm*2)*0.58,eyeY,eyeW,eyeH);
-                ctx.fillStyle=c(18,14,10);
-                ctx.fillRect(sx+hm+(sw-hm*2)*0.13,eyeY+1,eyeW*0.6,eyeH*0.65);
-                ctx.fillRect(sx+hm+(sw-hm*2)*0.61,eyeY+1,eyeW*0.6,eyeH*0.65);
-                ctx.fillStyle=c(skR-20,skG-22,skB-16); ctx.fillRect(sx+sw/2-1,eyeY+eyeH,Math.max(1,sw*0.03),headH*0.13);
-                ctx.fillStyle=c(skR-32,skG-42,skB-36); ctx.fillRect(sx+hm+(sw-hm*2)*0.30,headY+headH*0.80,(sw-hm*2)*0.40,Math.max(1,headH*0.07));
-                ctx.fillStyle=c(skR-14,skG-16,skB-12); ctx.fillRect(sx+hm,headY+headH*0.88,sw-hm*2,headH*0.12);
-                // Neck + collar
-                ctx.fillStyle=c(skR-10,skG-10,skB-8); ctx.fillRect(sx+nm,neckY,sw-nm*2,neckH);
-                ctx.fillStyle=c(shR,shG,shB); ctx.fillRect(sx+nm-2,neckY,sw-nm*2+4,neckH*0.55);
-                // Jacket + shirt V
-                ctx.fillStyle=c(jkR,jkG,jkB); ctx.fillRect(sx+bm,torsoY,sw-bm*2,torsoH);
-                for (let row=0;row<12;row++){
-                    const vw=sw*0.09+(sw*0.30-sw*0.09)*(row/12);
-                    ctx.fillStyle=c(shR,shG,shB);
-                    ctx.fillRect(sx+sw/2-vw/2,torsoY+torsoH*0.04+row*torsoH*0.08,vw,torsoH*0.08+1);
-                }
-                ctx.fillStyle=c(18,14,14); ctx.fillRect(sx+sw/2-sw*0.09,torsoY+torsoH*0.04,sw*0.18,torsoH*0.07);
-                ctx.fillStyle=c(35,28,28); ctx.fillRect(sx+sw/2-sw*0.02,torsoY+torsoH*0.04,sw*0.04,torsoH*0.07);
-                ctx.fillStyle=c(jkR+10,jkG+10,jkB+14);
-                ctx.fillRect(sx+bm,torsoY,sw*0.26,torsoH*0.50);
-                ctx.fillRect(sx+sw-bm-sw*0.26,torsoY,sw*0.26,torsoH*0.50);
-                ctx.fillStyle=c(jkR-5,jkG-5,jkB-4); ctx.fillRect(sx+sw/2-1,torsoY+torsoH*0.50,2,torsoH*0.50);
-                ctx.fillStyle=c(shR-10,shG-10,shB-10); ctx.fillRect(sx+sw/2-1,torsoY+torsoH*0.62,Math.max(1,sw*0.04),Math.max(1,sw*0.04));
-                // Arms
-                ctx.fillStyle=c(jkR,jkG,jkB);
-                ctx.fillRect(sx,torsoY+torsoH*0.04,aw,torsoH*0.76);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.04,aw,torsoH*0.76);
-                ctx.fillStyle=c(jkR+8,jkG+8,jkB+10);
-                ctx.fillRect(sx+1,torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.70);
-                ctx.fillRect(sx+sw-aw+1,torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.70);
-                ctx.fillStyle=c(shR,shG,shB);
-                ctx.fillRect(sx,torsoY+torsoH*0.76,aw,torsoH*0.10);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.76,aw,torsoH*0.10);
-                ctx.fillStyle=c(skR,skG,skB);
-                ctx.fillRect(sx,torsoY+torsoH*0.86,aw,torsoH*0.14);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.86,aw,torsoH*0.14);
-                ctx.fillStyle=c(skR-16,skG-16,skB-12);
-                ctx.fillRect(sx,torsoY+torsoH*0.94,aw,torsoH*0.06);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.94,aw,torsoH*0.06);
-                // Gun in right hand (left from viewer)
-                npcGun(sx+aw*0.05, torsoY+torsoH*0.68);
-            }
-
-            // Trousers (shared)
-            ctx.fillStyle=c(ptR,ptG,ptB);
-            ctx.fillRect(llx,legY,lw,legH); ctx.fillRect(lrx,legY,lw,legH);
-            ctx.fillStyle=c(ptR-6,ptG-6,ptB-4);
-            ctx.fillRect(llx+lw*0.5,legY,Math.max(1,lw*0.08),legH);
-            ctx.fillRect(lrx+lw*0.5,legY,Math.max(1,lw*0.08),legH);
-            // Shoes
-            ctx.fillStyle=c(14,12,14);
-            ctx.fillRect(llx-2,bootY,lw+(showBack?3:5),bootH*0.55);
-            ctx.fillRect(lrx-2,bootY,lw+(showBack?3:5),bootH*0.55);
-            ctx.fillRect(llx-2,bootY+bootH*0.55,lw+(showBack?4:6),bootH*0.45);
-            ctx.fillRect(lrx-2,bootY+bootH*0.55,lw+(showBack?4:6),bootH*0.45);
-            ctx.fillStyle=c(42,38,42);
-            ctx.fillRect(llx,bootY+1,lw+1,bootH*0.18); ctx.fillRect(lrx,bootY+1,lw+1,bootH*0.18);
-
-        } else {
-            // === MILITARY SOLDIER ===
-            const skR=202,skG=162,skB=120;
-            const unR=72, unG=84, unB=48;
-            const ptR=58, ptG=68, ptB=38;
-            const btR=40, btG=30, btB=18;
-            const hlR=55, hlG=66, hlB=34;
-
-            // Helmet (shared front/back structure)
-            ctx.fillStyle=c(hlR,hlG,hlB); ctx.fillRect(sx+hm-4,headY,sw-hm*2+8,headH*0.38);
-            ctx.fillStyle=c(hlR-8,hlG-8,hlB-5); ctx.fillRect(sx+hm-2,headY,sw-hm*2+4,headH*0.08);
-            ctx.fillStyle=c(hlR-10,hlG-10,hlB-6); ctx.fillRect(sx+hm-6,headY+headH*0.32,sw-hm*2+12,headH*0.10);
-
-            if (showBack) {
-                // Helmet back highlight
-                ctx.fillStyle=c(hlR+6,hlG+7,hlB+4); ctx.fillRect(sx+sw-hm-sw*0.08,headY+headH*0.04,sw*0.08,headH*0.22);
-                // Back of head
-                ctx.fillStyle=c(skR-12,skG-12,skB-10); ctx.fillRect(sx+hm,headY+headH*0.36,sw-hm*2,headH*0.64);
-                ctx.fillStyle=c(skR-20,skG-20,skB-15);
-                ctx.fillRect(sx+hm-3,headY+headH*0.48,Math.max(2,sw*0.05),headH*0.26);
-                ctx.fillRect(sx+sw-hm-1,headY+headH*0.48,Math.max(2,sw*0.05),headH*0.26);
-                ctx.fillStyle=c(skR-12,skG-12,skB-10); ctx.fillRect(sx+nm,neckY,sw-nm*2,neckH);
-                // Back of uniform
-                ctx.fillStyle=c(unR,unG,unB); ctx.fillRect(sx+bm,torsoY,sw-bm*2,torsoH);
-                ctx.fillStyle=c(unR-10,unG-10,unB-6); ctx.fillRect(sx+bm,torsoY,sw-bm*2,torsoH*0.09);
-                ctx.fillStyle=c(unR-12,unG-12,unB-8); ctx.fillRect(sx+sw/2-1,torsoY+torsoH*0.08,2,torsoH*0.80);
-                // Shoulder blades
-                ctx.fillStyle=c(unR+7,unG+7,unB+5);
-                ctx.fillRect(sx+bm+2,torsoY+torsoH*0.10,sw*0.26,torsoH*0.32);
-                ctx.fillRect(sx+sw-bm-2-sw*0.26,torsoY+torsoH*0.10,sw*0.26,torsoH*0.32);
-                // Belt back
-                ctx.fillStyle=c(42,32,18); ctx.fillRect(sx+bm,torsoY+torsoH*0.87,sw-bm*2,torsoH*0.14);
-                // Arms (back)
-                ctx.fillStyle=c(unR,unG,unB);
-                ctx.fillRect(sx,torsoY+torsoH*0.04,aw,torsoH*0.84);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.04,aw,torsoH*0.84);
-                ctx.fillStyle=c(unR+8,unG+8,unB+5);
-                ctx.fillRect(sx+aw-Math.max(1,aw*0.3),torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.76);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.76);
-                ctx.fillStyle=c(unR-16,unG-16,unB-10);
-                ctx.fillRect(sx,torsoY+torsoH*0.80,aw,torsoH*0.08);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.80,aw,torsoH*0.08);
-                ctx.fillStyle=c(skR-10,skG-10,skB-8);
-                ctx.fillRect(sx,torsoY+torsoH*0.86,aw,torsoH*0.14);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.86,aw,torsoH*0.14);
-            } else {
-                // Helmet front highlight
-                ctx.fillStyle=c(hlR+10,hlG+12,hlB+6); ctx.fillRect(sx+hm,headY+headH*0.04,sw*0.08,headH*0.22);
-                // Front face
-                ctx.fillStyle=c(skR,skG,skB); ctx.fillRect(sx+hm,headY+headH*0.36,sw-hm*2,headH*0.64);
-                ctx.fillStyle=c(skR-14,skG-14,skB-10);
-                ctx.fillRect(sx+hm-3,headY+headH*0.46,Math.max(2,sw*0.05),headH*0.26);
-                ctx.fillRect(sx+sw-hm-1,headY+headH*0.46,Math.max(2,sw*0.05),headH*0.26);
-                ctx.fillStyle=c(skR-18,skG-20,skB-14); ctx.fillRect(sx+hm,headY+headH*0.44,sw-hm*2,headH*0.08);
-                const eyeW2=Math.max(1,(sw-hm*2)*0.20),eyeH2=Math.max(1,headH*0.13),eyeY2=headY+headH*0.52;
-                ctx.fillStyle=c(skR-35,skG-35,skB-25);
-                ctx.fillRect(sx+hm+(sw-hm*2)*0.10,eyeY2,eyeW2,eyeH2);
-                ctx.fillRect(sx+hm+(sw-hm*2)*0.58,eyeY2,eyeW2,eyeH2);
-                ctx.fillStyle=c(20,16,10);
-                ctx.fillRect(sx+hm+(sw-hm*2)*0.13,eyeY2+1,eyeW2*0.6,eyeH2*0.65);
-                ctx.fillRect(sx+hm+(sw-hm*2)*0.61,eyeY2+1,eyeW2*0.6,eyeH2*0.65);
-                ctx.fillStyle=c(skR-20,skG-22,skB-16); ctx.fillRect(sx+sw/2-1,eyeY2+eyeH2,Math.max(1,sw*0.03),headH*0.12);
-                ctx.fillStyle=c(skR-30,skG-40,skB-32); ctx.fillRect(sx+hm+(sw-hm*2)*0.30,headY+headH*0.79,(sw-hm*2)*0.40,Math.max(1,headH*0.07));
-                ctx.fillStyle=c(skR-12,skG-14,skB-10); ctx.fillRect(sx+hm,headY+headH*0.88,sw-hm*2,headH*0.12);
-                ctx.fillStyle=c(skR-10,skG-10,skB-8); ctx.fillRect(sx+nm,neckY,sw-nm*2,neckH);
-                // Uniform jacket
-                ctx.fillStyle=c(unR,unG,unB); ctx.fillRect(sx+bm,torsoY,sw-bm*2,torsoH);
-                ctx.fillStyle=c(unR-10,unG-10,unB-6); ctx.fillRect(sx+bm,torsoY,sw-bm*2,torsoH*0.11);
-                ctx.fillStyle=c(unR-12,unG-12,unB-8); ctx.fillRect(sx+sw/2-1,torsoY,2,torsoH*0.88);
-                ctx.fillStyle=c(unR-10,unG-10,unB-6); ctx.fillRect(sx+bm+2,torsoY+torsoH*0.22,sw*0.21,torsoH*0.19);
-                ctx.fillStyle=c(unR+6,unG+6,unB+4); ctx.fillRect(sx+bm+2,torsoY+torsoH*0.22,sw*0.21,torsoH*0.04);
-                ctx.fillStyle=c(unR-14,unG-14,unB-8);
-                ctx.fillRect(sx+bm,torsoY+torsoH*0.02,sw*0.18,torsoH*0.08);
-                ctx.fillRect(sx+sw-bm-sw*0.18,torsoY+torsoH*0.02,sw*0.18,torsoH*0.08);
-                ctx.fillStyle=c(42,32,18); ctx.fillRect(sx+bm,torsoY+torsoH*0.87,sw-bm*2,torsoH*0.14);
-                ctx.fillStyle=c(88,72,38); ctx.fillRect(sx+sw/2-sw*0.04,torsoY+torsoH*0.87,sw*0.08,torsoH*0.14);
-                ctx.fillStyle=c(55,44,22); ctx.fillRect(sx+sw/2-sw*0.015,torsoY+torsoH*0.89,sw*0.03,torsoH*0.10);
-                // Arms
-                ctx.fillStyle=c(unR,unG,unB);
-                ctx.fillRect(sx,torsoY+torsoH*0.04,aw,torsoH*0.84);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.04,aw,torsoH*0.84);
-                ctx.fillStyle=c(unR+8,unG+8,unB+5);
-                ctx.fillRect(sx+1,torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.76);
-                ctx.fillRect(sx+sw-aw+1,torsoY+torsoH*0.06,Math.max(1,aw*0.3),torsoH*0.76);
-                ctx.fillStyle=c(unR-16,unG-16,unB-10);
-                ctx.fillRect(sx,torsoY+torsoH*0.80,aw,torsoH*0.08);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.80,aw,torsoH*0.08);
-                ctx.fillStyle=c(skR,skG,skB);
-                ctx.fillRect(sx,torsoY+torsoH*0.86,aw,torsoH*0.14);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.86,aw,torsoH*0.14);
-                ctx.fillStyle=c(skR-16,skG-16,skB-12);
-                ctx.fillRect(sx,torsoY+torsoH*0.94,aw,torsoH*0.06);
-                ctx.fillRect(sx+sw-aw,torsoY+torsoH*0.94,aw,torsoH*0.06);
-                // Gun in right hand
-                npcGun(sx+aw*0.05, torsoY+torsoH*0.68);
-            }
-
-            // Trousers (shared)
-            ctx.fillStyle=c(ptR,ptG,ptB);
-            ctx.fillRect(llx,legY,lw,legH); ctx.fillRect(lrx,legY,lw,legH);
-            ctx.fillStyle=c(ptR-8,ptG-8,ptB-5);
-            ctx.fillRect(llx+lw*0.5,legY,Math.max(1,lw*0.08),legH);
-            ctx.fillRect(lrx+lw*0.5,legY,Math.max(1,lw*0.08),legH);
-            // Boots (shared)
-            ctx.fillStyle=c(btR,btG,btB);
-            ctx.fillRect(llx-1,bootY,lw+2,bootH); ctx.fillRect(lrx-1,bootY,lw+2,bootH);
-            ctx.fillStyle=c(btR+16,btG+12,btB+8);
-            ctx.fillRect(llx,bootY+1,lw,bootH*0.24); ctx.fillRect(lrx,bootY+1,lw,bootH*0.24);
-            ctx.fillStyle=c(btR-5,btG-5,btB-3);
-            ctx.fillRect(llx-1,bootY+bootH*0.65,lw+3,bootH*0.35);
-            ctx.fillRect(lrx-1,bootY+bootH*0.65,lw+3,bootH*0.35);
-        }
+        const lrx = sx + bm + lw + gap;
+        ctx.fillStyle = pants;
+        ctx.fillRect(llx, legY, lw, legH * 0.82);
+        ctx.fillRect(lrx, legY, lw, legH * 0.82);
+        // Boots
+        ctx.fillStyle = boot;
+        ctx.fillRect(llx, legY + legH * 0.82, lw, legH * 0.18);
+        ctx.fillRect(lrx, legY + legH * 0.82, lw, legH * 0.18);
     }
 
     // ---- WEAPON SPRITE — PP7 + human hand (GoldenEye style) ---------------
-    function drawWeapon() {
+    function drawPP7() {
         const rY = gun.recoil * 3;
         const bY = player.bobOffset * 0.5;
 
+        // Anchor: bottom-right, gun center-of-grip
         const GX = 510;
         const GY = CH - 30 + rY + bY;
 
@@ -865,154 +686,83 @@
         const frameY = slideY + slideH;
         const gripY  = frameY + 22;
 
-        // === FOREARM ===
+        // === FOREARM (skin, angled from lower-right) ===
         ctx.save();
         ctx.translate(GX + 58, GY + 28);
         ctx.rotate(-0.10);
-        // Base skin
         ctx.fillStyle = '#c07850';
         ctx.fillRect(-22, -145, 48, 180);
-        // Inner forearm lighter highlight (radial feel)
-        ctx.fillStyle = 'rgba(215,155,105,0.45)';
-        ctx.fillRect(-7, -130, 18, 155);
-        // Shadow on sides
-        ctx.fillStyle = 'rgba(0,0,0,0.30)';
-        ctx.fillRect(-22, -145, 13, 180);
-        ctx.fillStyle = 'rgba(0,0,0,0.18)';
-        ctx.fillRect(12, -145, 12, 180);
-        // Wrist bone protrusions
-        ctx.fillStyle = 'rgba(210,162,112,0.58)';
-        ctx.fillRect(-17, 16, 10, 11);
-        ctx.fillRect(7, 12, 9, 9);
+        // Arm shadow edges
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.fillRect(-22, -145, 11, 180);
+        ctx.fillRect(15,  -145, 11, 180);
         // Sleeve cuff
-        ctx.fillStyle = '#28190e';
-        ctx.fillRect(-22, -145, 48, 13);
-        ctx.fillStyle = 'rgba(0,0,0,0.28)';
-        ctx.fillRect(-22, -132, 48, 5);
+        ctx.fillStyle = '#3a2a14';
+        ctx.fillRect(-22, -145, 48, 9);
         ctx.restore();
 
         // === BARREL ===
-        ctx.fillStyle = '#484848';
+        ctx.fillStyle = '#505050';
         ctx.fillRect(GX - 5, slideY - barrelLen, 10, barrelLen + 5);
-        ctx.fillStyle = '#2a2a2a';
-        ctx.fillRect(GX - 5, slideY - barrelLen, 3, barrelLen);   // barrel left shadow
-        ctx.fillStyle = '#1e1e1e';
-        ctx.fillRect(GX - 3, slideY - barrelLen, 6, 7);           // muzzle opening
-        // Front sight post
-        ctx.fillStyle = '#303030';
-        ctx.fillRect(GX - 2, slideY - barrelLen + 8, 4, 9);
-        ctx.fillStyle = 'rgba(255,255,200,0.55)';
-        ctx.fillRect(GX - 1, slideY - barrelLen + 9, 2, 4);       // sight dot
+        ctx.fillStyle = '#222';
+        ctx.fillRect(GX - 3, slideY - barrelLen, 6, 6);   // muzzle hole
 
-        // === SLIDE ===
-        ctx.fillStyle = '#d2d2d2';
+        // === SLIDE (silver) ===
+        ctx.fillStyle = '#d6d6d6';
         ctx.fillRect(slideX, slideY, slideW, slideH);
-        // Top chamfer highlight
-        ctx.fillStyle = '#e8e8e8';
-        ctx.fillRect(slideX + 2, slideY, slideW - 4, 5);
-        // Rear face darker
-        ctx.fillStyle = '#acacac';
-        ctx.fillRect(slideX, slideY, slideW, 12);
-        // Rear serrations (deeper grooves)
-        for (let i = 0; i < 9; i++) {
-            ctx.fillStyle = '#828282';
-            ctx.fillRect(slideX + slideW - 12, slideY + 6 + i * 5, 10, 3);
-            ctx.fillStyle = '#b4b4b4';
-            ctx.fillRect(slideX + slideW - 12, slideY + 7 + i * 5, 10, 1);
+        // Top of slide slightly darker
+        ctx.fillStyle = '#b8b8b8';
+        ctx.fillRect(slideX, slideY, slideW, 9);
+        // Rear serrations
+        ctx.fillStyle = '#a0a0a0';
+        for (let i = 0; i < 7; i++) {
+            ctx.fillRect(slideX + slideW - 10, slideY + 5 + i * 5, 8, 3);
         }
         // Ejection port
-        ctx.fillStyle = '#787878';
-        ctx.fillRect(slideX + slideW - 14, slideY + 38, 13, 25);
-        ctx.fillStyle = '#242424';
-        ctx.fillRect(slideX + slideW - 13, slideY + 39, 11, 23);
+        ctx.fillStyle = '#808080';
+        ctx.fillRect(slideX + slideW - 13, slideY + 42, 12, 22);
+        ctx.fillStyle = '#303030';
+        ctx.fillRect(slideX + slideW - 12, slideY + 43, 10, 20);
         // Left edge highlight
-        ctx.fillStyle = 'rgba(255,255,255,0.42)';
-        ctx.fillRect(slideX + 1, slideY + 3, 3, slideH - 6);
-        // Rear sights (two posts)
-        ctx.fillStyle = '#252525';
-        ctx.fillRect(slideX + 4, slideY + 2, 7, 8);
-        ctx.fillRect(slideX + 17, slideY + 2, 7, 8);
-        ctx.fillStyle = 'rgba(255,255,200,0.5)';
-        ctx.fillRect(slideX + 6, slideY + 4, 3, 4);
-        ctx.fillRect(slideX + 19, slideY + 4, 3, 4);
+        ctx.fillStyle = 'rgba(255,255,255,0.38)';
+        ctx.fillRect(slideX + 1, slideY + 2, 3, slideH - 4);
 
         // === FRAME ===
-        ctx.fillStyle = '#a6a6a6';
+        ctx.fillStyle = '#b0b0b0';
         ctx.fillRect(slideX - 2, frameY, slideW + 2, 26);
-        ctx.fillStyle = '#bfbfbf';
-        ctx.fillRect(slideX, frameY, slideW - 2, 4);               // slide/frame seam
         // Trigger guard
-        ctx.fillStyle = '#353535';
-        ctx.fillRect(slideX - 7, frameY + 7, 9, 27);
-        ctx.fillRect(slideX - 7, frameY + 31, slideW - 6, 7);
-        ctx.fillStyle = '#252525';
-        ctx.fillRect(slideX - 6, frameY + 8, 4, 25);               // guard inner shadow
+        ctx.fillStyle = '#404040';
+        ctx.fillRect(slideX - 5, frameY + 8, 7, 24);
+        ctx.fillRect(slideX - 5, frameY + 29, slideW - 8, 6);
 
-        // === GRIP ===
-        ctx.fillStyle = '#191919';
-        ctx.fillRect(GX - 16, gripY, 30, 60);
-        ctx.fillStyle = '#101010';
-        for (let r = 0; r < 7; r++) {
+        // === GRIP (dark, checkered) ===
+        ctx.fillStyle = '#1c1c1c';
+        ctx.fillRect(GX - 16, gripY, 30, 58);
+        ctx.fillStyle = '#141414';
+        for (let r = 0; r < 6; r++) {
             for (let c = 0; c < 3; c++) {
-                ctx.fillRect(GX - 13 + c * 8, gripY + 3 + r * 8, 6, 6);
+                ctx.fillRect(GX - 13 + c * 8, gripY + 4 + r * 9, 6, 7);
             }
         }
-        ctx.fillStyle = 'rgba(255,255,255,0.07)';
-        ctx.fillRect(GX - 15, gripY, 4, 60);                       // grip edge highlight
-        // Magazine base plate
-        ctx.fillStyle = '#222';
-        ctx.fillRect(GX - 14, gripY + 54, 28, 8);
-        ctx.fillStyle = '#333';
-        ctx.fillRect(GX - 13, gripY + 55, 26, 3);
 
-        // === HAND ===
+        // === HAND gripping gun ===
         const handY = gripY - 6;
-        // Palm / back of hand
+        // Palm (right side + back of hand)
         ctx.fillStyle = '#c07850';
         ctx.fillRect(GX + 12, handY, 28, 55);
-        // Palm centre highlight
-        ctx.fillStyle = 'rgba(210,155,100,0.42)';
-        ctx.fillRect(GX + 17, handY + 6, 14, 36);
-        // Pinky-side shadow
-        ctx.fillStyle = 'rgba(0,0,0,0.22)';
-        ctx.fillRect(GX + 32, handY, 8, 55);
-        // Knuckle row at palm top
-        ctx.fillStyle = '#b87248';
-        for (let f = 0; f < 4; f++) ctx.fillRect(GX + 13 + f * 6, handY, 5, 8);
-        ctx.fillStyle = 'rgba(225,175,128,0.5)';
-        for (let f = 0; f < 4; f++) ctx.fillRect(GX + 14 + f * 6, handY + 1, 3, 4);
-
-        // Thumb
+        // Thumb (left of grip)
         ctx.fillStyle = '#b06840';
-        ctx.fillRect(GX - 24, handY + 3, 16, 36);
-        ctx.fillStyle = 'rgba(195,135,85,0.45)';
-        ctx.fillRect(GX - 21, handY + 8, 8, 22);
-        ctx.fillStyle = 'rgba(0,0,0,0.25)';
-        ctx.fillRect(GX - 24, handY + 3, 5, 36);
-        // Thumb tip + nail
-        ctx.fillStyle = '#9e5630';
-        ctx.fillRect(GX - 24, handY + 3, 16, 9);
-        ctx.fillStyle = 'rgba(215,185,155,0.65)';
-        ctx.fillRect(GX - 21, handY + 4, 8, 5);
-
-        // Four fingers wrapping grip (with crease gaps between)
+        ctx.fillRect(GX - 22, handY + 6, 14, 32);
+        // Fingers wrapping front of grip
         for (let f = 0; f < 4; f++) {
-            const fy2 = handY + 9 + f * 12;
             ctx.fillStyle = f % 2 === 0 ? '#b87248' : '#c07850';
-            ctx.fillRect(GX - 22, fy2, 36, 10);
-            // Inner finger highlight
-            ctx.fillStyle = 'rgba(218,162,112,0.38)';
-            ctx.fillRect(GX - 20, fy2 + 1, 28, 4);
-            // Crease between fingers
-            if (f < 3) {
-                ctx.fillStyle = 'rgba(0,0,0,0.38)';
-                ctx.fillRect(GX - 22, fy2 + 10, 36, 2);
-            }
+            ctx.fillRect(GX - 20, handY + 10 + f * 12, 34, 10);
         }
-        // Fingernails on top two knuckles
-        ctx.fillStyle = 'rgba(215,185,150,0.58)';
-        ctx.fillRect(GX - 19, handY + 9,  24, 4);
-        ctx.fillRect(GX - 19, handY + 21, 24, 4);
+        // Knuckle highlights
+        ctx.fillStyle = 'rgba(255,215,175,0.28)';
+        for (let f = 0; f < 4; f++) {
+            ctx.fillRect(GX - 20, handY + 10 + f * 12, 34, 3);
+        }
 
         // === MUZZLE FLASH ===
         if (gun.muzzleFlash > 0) {
@@ -1022,6 +772,308 @@
             ctx.beginPath(); ctx.arc(mX, mY, 26, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = `rgba(255,250,180,${alpha})`;
             ctx.beginPath(); ctx.arc(mX, mY, 12, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+
+    // ---- WEAPON DISPATCH ---------------------------------------------------
+    function drawWeapon() {
+        switch (player.currentGun) {
+            case 'kf7':     drawKF7();     break;
+            case 'shotgun': drawShotgun(); break;
+            case 'sniper':  drawSniper();  break;
+            default:        drawPP7();     break;
+        }
+    }
+
+    function drawKF7() {
+        const rY = gun.recoil * 2;
+        const bY = player.bobOffset * 0.5;
+        const GX = 490, GY = CH - 15 + rY + bY;
+
+        // Forearm
+        ctx.save();
+        ctx.translate(GX + 68, GY + 22);
+        ctx.rotate(-0.08);
+        ctx.fillStyle = '#c07850';
+        ctx.fillRect(-20, -130, 44, 165);
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.fillRect(-20, -130, 10, 165);
+        ctx.fillStyle = '#3a2a14';
+        ctx.fillRect(-20, -130, 44, 9);
+        ctx.restore();
+
+        // Stock
+        ctx.fillStyle = '#6a3c18';
+        ctx.fillRect(GX + 22, GY - 58, 65, 18);
+        ctx.fillRect(GX + 72, GY - 74, 26, 36);
+
+        // Long barrel
+        ctx.fillStyle = '#404040';
+        ctx.fillRect(GX - 7, GY - 195, 14, 155);
+        ctx.fillStyle = '#1c1c1c';
+        ctx.fillRect(GX - 9, GY - 195, 18, 12);
+        ctx.fillStyle = '#111';
+        ctx.fillRect(GX - 4, GY - 195, 8, 6);
+
+        // Wooden handguard
+        ctx.fillStyle = '#7a4c20';
+        ctx.fillRect(GX - 13, GY - 155, 26, 55);
+
+        // Receiver body
+        ctx.fillStyle = '#2c2c2c';
+        ctx.fillRect(GX - 17, GY - 100, 50, 52);
+
+        // Curved banana magazine
+        ctx.fillStyle = '#1a1a1a';
+        ctx.beginPath();
+        ctx.moveTo(GX - 10, GY - 48);
+        ctx.quadraticCurveTo(GX + 18, GY - 20, GX + 14, GY + 12);
+        ctx.lineTo(GX +  6, GY + 12);
+        ctx.quadraticCurveTo(GX + 10, GY - 20, GX -  2, GY - 48);
+        ctx.closePath();
+        ctx.fill();
+
+        // Hand / grip
+        ctx.fillStyle = '#c07850';
+        ctx.fillRect(GX - 13, GY - 36, 34, 52);
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        ctx.fillRect(GX + 11, GY - 36, 10, 52);
+
+        if (gun.muzzleFlash > 0) {
+            const a = gun.muzzleFlash / 3;
+            ctx.fillStyle = `rgba(255,190,45,${a * 0.85})`;
+            ctx.beginPath(); ctx.arc(GX, GY - 195, 20, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = `rgba(255,250,180,${a})`;
+            ctx.beginPath(); ctx.arc(GX, GY - 195, 9, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+
+    function drawShotgun() {
+        const rY = gun.recoil * 3;
+        const bY = player.bobOffset * 0.5;
+        const GX = 490, GY = CH - 12 + rY + bY;
+
+        // Forearm
+        ctx.save();
+        ctx.translate(GX + 62, GY + 22);
+        ctx.rotate(-0.08);
+        ctx.fillStyle = '#c07850';
+        ctx.fillRect(-20, -125, 44, 160);
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.fillRect(-20, -125, 10, 160);
+        ctx.fillStyle = '#3a2a14';
+        ctx.fillRect(-20, -125, 44, 9);
+        ctx.restore();
+
+        // Stock
+        ctx.fillStyle = '#8b5a2b';
+        ctx.fillRect(GX + 16, GY - 44, 72, 20);
+        ctx.fillRect(GX + 72, GY - 62, 24, 40);
+
+        // Double barrels
+        ctx.fillStyle = '#555';
+        ctx.fillRect(GX - 14, GY - 175, 11, 145);
+        ctx.fillRect(GX +  3, GY - 175, 11, 145);
+        ctx.fillStyle = '#2a2a2a';
+        ctx.fillRect(GX - 12, GY - 175, 9, 10);
+        ctx.fillRect(GX +  5, GY - 175, 9, 10);
+
+        // Barrel bands
+        ctx.fillStyle = '#444';
+        ctx.fillRect(GX - 16, GY - 130, 30, 8);
+        ctx.fillRect(GX - 16, GY - 90,  30, 8);
+
+        // Wooden forestock
+        ctx.fillStyle = '#8b5a2b';
+        ctx.fillRect(GX - 15, GY - 140, 30, 60);
+
+        // Receiver
+        ctx.fillStyle = '#363636';
+        ctx.fillRect(GX - 17, GY - 80, 42, 42);
+
+        // Trigger guard
+        ctx.fillStyle = '#282828';
+        ctx.fillRect(GX - 13, GY - 38, 7, 28);
+        ctx.fillRect(GX - 13, GY - 10, 26, 5);
+
+        // Hand
+        ctx.fillStyle = '#c07850';
+        ctx.fillRect(GX - 11, GY - 32, 30, 48);
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fillRect(GX + 9, GY - 32, 10, 48);
+
+        if (gun.muzzleFlash > 0) {
+            const a = gun.muzzleFlash / 3;
+            ctx.fillStyle = `rgba(255,190,45,${a * 0.85})`;
+            ctx.beginPath(); ctx.arc(GX, GY - 175, 28, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = `rgba(255,250,180,${a})`;
+            ctx.beginPath(); ctx.arc(GX, GY - 175, 13, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+
+    function drawSniper() {
+        const rY = gun.recoil * 4;
+        const bY = player.bobOffset * 0.5;
+        const GX = 500, GY = CH - 22 + rY + bY;
+
+        // Forearm
+        ctx.save();
+        ctx.translate(GX + 56, GY + 18);
+        ctx.rotate(-0.06);
+        ctx.fillStyle = '#c07850';
+        ctx.fillRect(-18, -128, 40, 158);
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.fillRect(-18, -128, 9, 158);
+        ctx.fillStyle = '#3a2a14';
+        ctx.fillRect(-18, -128, 40, 9);
+        ctx.restore();
+
+        // Stock (long wooden)
+        ctx.fillStyle = '#7a4c20';
+        ctx.fillRect(GX + 18, GY - 48, 88, 16);
+        ctx.fillRect(GX + 84, GY - 66, 28, 38);
+        ctx.fillStyle = '#8b5a2b'; // cheek rest
+        ctx.fillRect(GX + 52, GY - 66, 34, 20);
+
+        // Very long thin barrel
+        ctx.fillStyle = '#3c3c3c';
+        ctx.fillRect(GX - 4, GY - 258, 8, 218);
+        ctx.fillStyle = '#2a2a2a';
+        ctx.fillRect(GX - 6, GY - 258, 12, 10);
+        ctx.fillStyle = '#111';
+        ctx.fillRect(GX - 3, GY - 258, 6, 5);
+
+        // Receiver
+        ctx.fillStyle = '#282828';
+        ctx.fillRect(GX - 15, GY - 96, 40, 52);
+
+        // Scope body
+        ctx.fillStyle = '#1e1e1e';
+        ctx.fillRect(GX - 9, GY - 148, 20, 54);
+        // Scope lenses
+        ctx.fillStyle = '#0a1520';
+        ctx.fillRect(GX - 6, GY - 146, 14, 16);
+        ctx.fillRect(GX - 6, GY - 98,  14, 16);
+        // Crosshair glow
+        ctx.fillStyle = 'rgba(120,210,255,0.5)';
+        ctx.fillRect(GX - 1, GY - 146, 2, 16);
+        ctx.fillRect(GX - 6, GY - 140, 14, 2);
+
+        // Bolt handle
+        ctx.fillStyle = '#555';
+        ctx.fillRect(GX + 22, GY - 82, 14, 7);
+        ctx.fillStyle = '#666';
+        ctx.beginPath(); ctx.arc(GX + 36, GY - 78, 5, 0, Math.PI * 2); ctx.fill();
+
+        // Trigger guard
+        ctx.fillStyle = '#303030';
+        ctx.fillRect(GX - 11, GY - 44, 7, 26);
+        ctx.fillRect(GX - 11, GY - 18, 24, 5);
+
+        // Hand
+        ctx.fillStyle = '#c07850';
+        ctx.fillRect(GX - 9, GY - 38, 28, 50);
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fillRect(GX + 9, GY - 38, 9, 50);
+
+        if (gun.muzzleFlash > 0) {
+            const a = gun.muzzleFlash / 3;
+            ctx.fillStyle = `rgba(255,190,45,${a * 0.85})`;
+            ctx.beginPath(); ctx.arc(GX, GY - 258, 14, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = `rgba(255,250,180,${a})`;
+            ctx.beginPath(); ctx.arc(GX, GY - 258, 6, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+
+    // ---- PICKUP RENDERING --------------------------------------------------
+    const PICKUP_COLORS = {
+        pp7:     { main: '#c8c8c8', glow: 'rgba(220,220,220,' },
+        kf7:     { main: '#607040', glow: 'rgba(100,160,50,'  },
+        shotgun: { main: '#8b5a28', glow: 'rgba(200,130,60,'  },
+        sniper:  { main: '#2a5060', glow: 'rgba(60,170,200,'  },
+    };
+
+    function drawPickups() {
+        pickupPulse++;
+        const pulse = Math.sin(pickupPulse * 0.06) * 0.3 + 0.7;
+        const visible = pickups.filter(p => p.active);
+        visible.sort((a, b) =>
+            ((b.x-player.x)**2 + (b.y-player.y)**2) - ((a.x-player.x)**2 + (a.y-player.y)**2)
+        );
+
+        for (const p of visible) {
+            const dx = p.x - player.x, dy = p.y - player.y;
+            const distWorld = Math.sqrt(dx*dx + dy*dy);
+            if (distWorld < 1) continue;
+
+            const angle = Math.atan2(dy, dx);
+            let angleDiff = angle - player.angle;
+            while (angleDiff >  Math.PI) angleDiff -= 2*Math.PI;
+            while (angleDiff < -Math.PI) angleDiff += 2*Math.PI;
+            if (Math.abs(angleDiff) > HALF_FOV + 0.1) continue;
+
+            const screenX = Math.round(CW / 2 + (angleDiff / FOV) * CW);
+            const corrDist = (distWorld / CS) * Math.cos(angleDiff);
+            if (corrDist <= 0) continue;
+            if (screenX < -60 || screenX > CW + 60) continue;
+
+            const zCheck = Math.max(0, Math.min(CW - 1, screenX));
+            if (corrDist >= zBuffer[zCheck]) continue;
+
+            const wallH = (CH / corrDist) * 1.5;
+            const floorY = Math.round(CH / 2 + player.bobOffset + wallH * 0.5);
+            const spriteH = Math.min(55, Math.round((CH / corrDist) * 0.55));
+            const spriteW = Math.round(spriteH * (p.type === 'gun' ? 2.2 : 1.1));
+            const sx = Math.round(screenX - spriteW / 2);
+            const sy = Math.round(floorY - spriteH);
+            if (sy + spriteH < 0 || sy > CH) continue;
+
+            ctx.save();
+            ctx.beginPath();
+            for (let col = 0; col < spriteW; col++) {
+                const px = sx + col;
+                if (px >= 0 && px < CW && corrDist < zBuffer[px]) ctx.rect(px, 0, 1, CH);
+            }
+            ctx.clip();
+            drawPickupSprite(p, sx, sy, spriteW, spriteH, pulse);
+            ctx.restore();
+        }
+    }
+
+    function drawPickupSprite(p, sx, sy, sw, sh, pulse) {
+        const col = PICKUP_COLORS[p.gun];
+        // Shadow glow ellipse on floor
+        ctx.fillStyle = col.glow + (pulse * 0.4) + ')';
+        ctx.beginPath();
+        ctx.ellipse(sx + sw/2, sy + sh + 2, sw * 0.55, sh * 0.18, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (p.type === 'gun') {
+            // Simple gun silhouette
+            ctx.fillStyle = col.main;
+            ctx.fillRect(sx,              sy + sh*0.25, sw*0.72, sh*0.35); // body
+            ctx.fillRect(sx + sw*0.65,    sy + sh*0.10, sw*0.35, sh*0.22); // barrel
+            ctx.fillRect(sx + sw*0.12,    sy + sh*0.57, sw*0.22, sh*0.40); // grip
+            ctx.fillStyle = 'rgba(255,255,255,0.22)';
+            ctx.fillRect(sx,              sy + sh*0.25, sw*0.72, sh*0.08); // highlight
+        } else {
+            // Ammo box
+            ctx.fillStyle = '#d4a820';
+            ctx.fillRect(sx + sw*0.08, sy + sh*0.08, sw*0.84, sh*0.84);
+            ctx.fillStyle = '#a07810';
+            ctx.fillRect(sx + sw*0.12, sy + sh*0.12, sw*0.76, sh*0.22);
+            ctx.fillStyle = '#e8c030';
+            ctx.fillRect(sx + sw*0.12, sy + sh*0.40, sw*0.76, sh*0.06);
+            ctx.fillStyle = '#c0a040';
+            for (let i = 0; i < 3; i++) {
+                ctx.fillRect(sx + sw*(0.16 + i*0.25), sy + sh*0.50, sw*0.14, sh*0.34);
+            }
+        }
+        if (sh > 14) {
+            ctx.fillStyle = 'rgba(255,255,255,0.95)';
+            ctx.font = `bold ${Math.max(8, Math.round(sh * 0.28))}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.fillText(GUN_DEFS[p.gun].name, sx + sw/2, sy - 2);
         }
     }
 
@@ -1067,43 +1119,50 @@
     function shoot() {
         if (!gameRunning) return;
         if (gun.cooldown > 0) return;
-        if (player.ammo <= 0) return;
+        const gd = GUN_DEFS[player.currentGun];
+        if (player.guns[player.currentGun].ammo <= 0) return;
 
-        player.ammo--;
+        player.guns[player.currentGun].ammo--;
         gun.recoil = 15;
         gun.muzzleFlash = 3;
-        gun.cooldown = 12;
+        gun.cooldown = gd.cooldown;
 
         // Bullet tracer from muzzle toward crosshair
         const muzzleX = 510;
-        const muzzleY = CH - 30 - 84 - 38 - 38; // GY - slideH - barrelLen*2
+        const muzzleY = CH - 30 - 84 - 38 - 38;
         bulletTrails.push({ age: 7, x1: muzzleX, y1: muzzleY, x2: CW / 2, y2: CH / 2 });
 
-        // Raycast for enemy hit
-        const rdx = Math.cos(player.angle);
-        const rdy = Math.sin(player.angle);
+        // Shotgun fires 3 pellets; other guns fire once
+        const pellets = player.currentGun === 'shotgun' ? 3 : 1;
+        for (let p = 0; p < pellets; p++) {
+            const offset = pellets > 1 ? (p - 1) * (gd.spread / 2) : 0;
+            const aimAngle = player.angle + offset;
 
-        let closest = null, closestDist = Infinity;
-        for (const e of enemies) {
-            if (!e.active) continue;
-            const ex = e.x - player.x, ey = e.y - player.y;
-            const dist = Math.sqrt(ex*ex + ey*ey);
-            const eAngle = Math.atan2(ey, ex);
-            let ad = eAngle - player.angle;
-            while (ad >  Math.PI) ad -= 2*Math.PI;
-            while (ad < -Math.PI) ad += 2*Math.PI;
-            if (Math.abs(ad) < 0.18 && dist < closestDist && hasLOS(player.x, player.y, e.x, e.y)) {
-                closest = e; closestDist = dist;
+            let closest = null, closestDist = Infinity;
+            for (const e of enemies) {
+                if (!e.active) continue;
+                const ex = e.x - player.x, ey = e.y - player.y;
+                const dist = Math.sqrt(ex*ex + ey*ey);
+                const eAngle = Math.atan2(ey, ex);
+                let ad = eAngle - aimAngle;
+                while (ad >  Math.PI) ad -= 2*Math.PI;
+                while (ad < -Math.PI) ad += 2*Math.PI;
+                if (Math.abs(ad) < gd.spread && dist < closestDist && hasLOS(player.x, player.y, e.x, e.y)) {
+                    closest = e; closestDist = dist;
+                }
             }
-        }
-        if (closest) {
-            closest.health -= 50;
-            if (closest.health <= 0) {
-                closest.active = false;
-                closest.state = 'dead';
-            } else {
-                closest.state = 'flee';
-                closest.fleeTimer = 0;
+            if (closest) {
+                let dmg = gd.damage;
+                if (player.currentGun === 'shotgun') {
+                    dmg = Math.max(15, dmg * Math.max(0.2, 1 - closestDist / (CS * 8)));
+                }
+                closest.health -= dmg;
+                if (closest.health <= 0) {
+                    closest.active = false;
+                    closest.state = 'dead';
+                } else {
+                    closest.state = 'alert';
+                }
             }
         }
     }
@@ -1163,13 +1222,6 @@
                         moveToward(e, player.x, player.y, CHASE_SPEED);
                     }
                 }
-            } else if (e.state === 'flee') {
-                e.fleeTimer = (e.fleeTimer || 0) + 1;
-                // Run directly away from player
-                const fleeX = e.x - (dx / dist) * CS * 4;
-                const fleeY = e.y - (dy / dist) * CS * 4;
-                moveToward(e, fleeX, fleeY, CHASE_SPEED * 1.3);
-                if (e.fleeTimer > 150) { e.state = 'alert'; e.fleeTimer = 0; }
             } else if (e.state === 'shoot') {
                 if (!los || dist > SHOOT_DIST * 1.3) {
                     e.state = 'alert';
@@ -1188,6 +1240,7 @@
                         if (gameRunning) {
                             player.health -= 10;
                             damageFlash = 8;
+                            regenTimer = 0;
                         }
                     }
                 }
@@ -1214,6 +1267,32 @@
         if (!canX && !canY) {
             const slideX = e.x + (dx/d) * speed;
             if (!mapSolid(Math.floor(slideX/CS), Math.floor(e.y/CS))) e.x = slideX;
+        }
+    }
+
+    // ---- PICKUP LOGIC ------------------------------------------------------
+    function updatePickups() {
+        for (const p of pickups) {
+            if (!p.active) {
+                if (--p.timer <= 0) p.active = true;
+                continue;
+            }
+            const dx = p.x - player.x, dy = p.y - player.y;
+            if (dx*dx + dy*dy > 1024) continue; // 32px radius
+            const gd = GUN_DEFS[p.gun];
+            if (p.type === 'gun') {
+                player.guns[p.gun].has = true;
+                player.guns[p.gun].ammo = Math.min(
+                    player.guns[p.gun].ammo + gd.magSize, gd.magSize * 2
+                );
+                if (player.currentGun === 'pp7') player.currentGun = p.gun;
+            } else {
+                player.guns[p.gun].ammo = Math.min(
+                    player.guns[p.gun].ammo + Math.ceil(gd.magSize * 0.5), gd.magSize * 3
+                );
+            }
+            p.active = false;
+            p.timer = p.type === 'gun' ? PICKUP_RESPAWN_GUN : PICKUP_RESPAWN_AMMO;
         }
     }
 
@@ -1331,6 +1410,7 @@
     const healthDisplay  = document.getElementById('healthDisplay');
     const healthBarFill  = document.getElementById('healthBarFill');
     const ammoDisplay    = document.getElementById('ammoDisplay');
+    const gunNameEl      = document.getElementById('gunName');
     const enemyCount     = document.getElementById('enemyCount');
     const overlay        = document.getElementById('overlay');
     const overlayTitle   = document.getElementById('overlayTitle');
@@ -1341,8 +1421,13 @@
         healthBarFill.style.width = (pct * 100) + '%';
         healthBarFill.style.background = pct > 0.5 ? '#4caf50' : pct > 0.25 ? '#ff9800' : '#f44336';
 
-        const ammoBlocks = '█'.repeat(Math.ceil(player.ammo / 4)).padEnd(Math.ceil(player.maxAmmo / 4), '░');
-        ammoDisplay.textContent = `${ammoBlocks} ${player.ammo}/${player.maxAmmo}`;
+        const gd = GUN_DEFS[player.currentGun];
+        const ammo = player.guns[player.currentGun].ammo;
+        const blocks = 6;
+        const filled = Math.round(ammo / gd.magSize * blocks);
+        const ammoBlocks = '█'.repeat(Math.max(0, filled)).padEnd(blocks, '░');
+        gunNameEl.textContent = gd.name;
+        ammoDisplay.textContent = `${ammoBlocks} ${ammo}`;
 
         const alive = enemies.filter(e => e.active).length;
         enemyCount.textContent = `\u{1F465} ${alive}`;
@@ -1386,13 +1471,23 @@
         if (gun.muzzleFlash > 0) gun.muzzleFlash--;
         if (gun.cooldown > 0) gun.cooldown--;
 
+        // Health regen: starts 3s after last hit, +1 HP every 30 frames, cap at 100
+        if (player.health > 0 && player.health < 100) {
+            regenTimer++;
+            if (regenTimer > 180 && regenTimer % 30 === 0) {
+                player.health = Math.min(100, player.health + 1);
+            }
+        }
+
         render3D();
         drawEnemies();
+        drawPickups();
         drawBulletTrails();
         drawWeapon();
         drawDamageFlash();
         drawCrosshair();
 
+        updatePickups();
         updateHUD();
         updateRadar();
         checkWinLose();
@@ -1414,14 +1509,21 @@
             y: 42 * CS,
             angle: -Math.PI / 2,
             health: 100,
-            ammo: 24,
-            maxAmmo: 24,
+            guns: {
+                pp7:     { has: true,  ammo: 24 },
+                kf7:     { has: false, ammo: 0  },
+                shotgun: { has: false, ammo: 0  },
+                sniper:  { has: false, ammo: 0  },
+            },
+            currentGun: 'pp7',
             bobPhase: 0,
             bobOffset: 0
         };
         gun = { recoil: 0, muzzleFlash: 0, cooldown: 0 };
         damageFlash = 0;
+        regenTimer = 0;
         bulletTrails = [];
+        initPickups();
         spawnEnemies();
         gameRunning = true;
         const id = ++loopId;
