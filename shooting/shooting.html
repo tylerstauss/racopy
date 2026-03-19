@@ -351,7 +351,8 @@
             waypoint: randomWaypoint(),
             shootTimer: 0,
             alertTime: 0,
-            type: i % 2
+            type: i % 2,
+            animTick: Math.random() * 100  // offset so they don't all sync
         }));
     }
 
@@ -582,7 +583,7 @@
             const corrDist = (distWorld / CS) * Math.cos(angleDiff);
             if (corrDist <= 0) continue;
 
-            const spriteH = Math.min(CH * 0.57, (CH / corrDist) * 1.2);
+            const spriteH = Math.min(CH * 0.88, (CH / corrDist) * 1.2);
             const spriteW = Math.round(spriteH * 0.55);
             const sx = Math.round(screenX - spriteW / 2);
             const sy = Math.round(CH / 2 + player.bobOffset - spriteH / 2);
@@ -610,28 +611,35 @@
             }
             ctx.clip();
 
-            drawHumanFigure(sx, sy, spriteW, spriteH, shade, e.type);
+            drawHumanFigure(sx, sy, spriteW, spriteH, shade, e.type, e.animTick || 0, e.state, e.state === 'shoot' && (e.shootTimer || 0) < 5);
             ctx.restore();
         }
     }
 
-    function drawHumanFigure(sx, sy, sw, sh, shade, type) {
+    function drawHumanFigure(sx, sy, sw, sh, shade, type, animTick, state, muzzleFlash) {
+        animTick = animTick || 0;
+        state    = state    || 'patrol';
         const s = shade;
-        const skin     = `rgb(${Math.round(218*s)},${Math.round(172*s)},${Math.round(132*s)})`;
-        const skinDark = `rgb(${Math.round(185*s)},${Math.round(140*s)},${Math.round(105*s)})`;
-        const hair     = `rgb(${Math.round(52*s)},${Math.round(36*s)},${Math.round(20*s)})`;
-        const uniform  = type === 0
+
+        const isWalking  = state === 'patrol' || state === 'alert';
+        const isShooting = state === 'shoot';
+        const walkPhase  = isWalking ? Math.sin(animTick * 0.22) : 0;
+
+        const skin      = `rgb(${Math.round(218*s)},${Math.round(172*s)},${Math.round(132*s)})`;
+        const skinDark  = `rgb(${Math.round(185*s)},${Math.round(140*s)},${Math.round(105*s)})`;
+        const hair      = `rgb(${Math.round(52*s)},${Math.round(36*s)},${Math.round(20*s)})`;
+        const uniform   = type === 0
             ? `rgb(${Math.round(175*s)},${Math.round(42*s)},${Math.round(42*s)})`
             : `rgb(${Math.round(42*s)},${Math.round(122*s)},${Math.round(42*s)})`;
-        const uniformDark = type === 0
+        const uniformDk = type === 0
             ? `rgb(${Math.round(130*s)},${Math.round(28*s)},${Math.round(28*s)})`
             : `rgb(${Math.round(28*s)},${Math.round(90*s)},${Math.round(28*s)})`;
-        const pants    = `rgb(${Math.round(36*s)},${Math.round(36*s)},${Math.round(50*s)})`;
-        const pantsDark= `rgb(${Math.round(24*s)},${Math.round(24*s)},${Math.round(36*s)})`;
-        const boot     = `rgb(${Math.round(22*s)},${Math.round(16*s)},${Math.round(10*s)})`;
-        const gunMetal = `rgb(${Math.round(55*s)},${Math.round(55*s)},${Math.round(60*s)})`;
+        const pants     = `rgb(${Math.round(36*s)},${Math.round(36*s)},${Math.round(50*s)})`;
+        const pantsDk   = `rgb(${Math.round(24*s)},${Math.round(24*s)},${Math.round(36*s)})`;
+        const boot      = `rgb(${Math.round(22*s)},${Math.round(16*s)},${Math.round(10*s)})`;
+        const gunMetal  = `rgb(${Math.round(55*s)},${Math.round(55*s)},${Math.round(60*s)})`;
 
-        // Realistic 7.5-head proportions
+        // 7.5-head proportions
         const headH     = sh * 0.133;
         const neckH     = sh * 0.028;
         const torsoH    = sh * 0.295;
@@ -640,47 +648,62 @@
         const bootH     = sh * 0.072;
 
         const headY     = sy;
-        const neckY     = headY + headH;
-        const torsoY    = neckY + neckH;
+        const neckY     = headY  + headH;
+        const torsoY    = neckY  + neckH;
         const legY      = torsoY + torsoH;
-        const lowerLegY = legY + upperLegH;
-        const bootY     = lowerLegY + lowerLegH;
+        const lowerLegY = legY   + upperLegH;
 
-        const headW  = sw * 0.46;
-        const headX  = sx + (sw - headW) / 2;
-        const hcx    = headX + headW / 2;
-        const hcy    = headY + headH / 2;
-
-        const neckW  = sw * 0.16;
-        const neckX  = sx + (sw - neckW) / 2;
+        const headW = sw * 0.46;
+        const headX = sx + (sw - headW) / 2;
+        const hcx   = headX + headW / 2;
+        const hcy   = headY + headH / 2;
+        const neckW = sw * 0.16;
+        const neckX = sx + (sw - neckW) / 2;
 
         const shoulderW = sw * 0.90;
         const shoulderX = sx + (sw - shoulderW) / 2;
         const torsoW    = sw * 0.56;
         const torsoX    = sx + (sw - torsoW) / 2;
+        const aw  = sw * 0.13;
+        const lw  = torsoW * 0.43;
+        const llx = torsoX;
+        const lrx = torsoX + lw + torsoW * 0.14;
+        const llw = lw * 0.86;
 
-        const aw   = sw * 0.13;
-        const lw   = torsoW * 0.43;
-        const lgap = torsoW * 0.14;
-        const llx  = torsoX;
-        const lrx  = torsoX + lw + lgap;
+        // Arm offsets: swing opposite to legs when walking; raise when shooting
+        const armSwing = torsoH * 0.20;
+        let lArmY = torsoY + torsoH * 0.11;
+        let rArmY = torsoY + torsoH * 0.11;
+        if (isWalking) {
+            lArmY +=  walkPhase * armSwing;
+            rArmY += -walkPhase * armSwing;
+        }
+        if (isShooting) {
+            lArmY -= torsoH * 0.28;
+            rArmY -= torsoH * 0.28;
+        }
 
-        // --- HEAD: ellipse with hair on top half ---
+        // Leg swing: lower leg and boot follow a delayed phase
+        const legSwing  = upperLegH * 0.30;
+        const lLegOff   = walkPhase *  legSwing;
+        const rLegOff   = walkPhase * -legSwing;
+        const lLowerOff = lLegOff * 0.55;
+        const rLowerOff = rLegOff * 0.55;
+
+        // ---- HEAD ----
         ctx.fillStyle = skin;
         ctx.beginPath();
         ctx.ellipse(hcx, hcy, headW / 2, headH / 2, 0, 0, Math.PI * 2);
         ctx.fill();
-
-        // Hair (top arc)
         ctx.fillStyle = hair;
         ctx.beginPath();
         ctx.ellipse(hcx, hcy, headW / 2, headH / 2, 0, Math.PI, 0);
         ctx.fill();
 
-        // Eyes — whites + pupils
-        const eyeY  = headY + headH * 0.46;
-        const eyeW  = Math.max(1, headW * 0.16);
-        const eyeH  = Math.max(1, headH * 0.15);
+        // Eyes
+        const eyeY = headY + headH * 0.46;
+        const eyeW = Math.max(1, headW * 0.16);
+        const eyeH = Math.max(1, headH * 0.15);
         ctx.fillStyle = '#ddd';
         ctx.fillRect(headX + headW * 0.16, eyeY, eyeW, eyeH);
         ctx.fillRect(headX + headW * 0.62, eyeY, eyeW, eyeH);
@@ -688,71 +711,90 @@
         ctx.fillRect(headX + headW * 0.20, eyeY + eyeH * 0.2, eyeW * 0.55, eyeH * 0.65);
         ctx.fillRect(headX + headW * 0.66, eyeY + eyeH * 0.2, eyeW * 0.55, eyeH * 0.65);
 
-        // Nose
+        // Nose + mouth
         ctx.fillStyle = skinDark;
-        const noseW = Math.max(1, headW * 0.08);
-        const noseH = Math.max(1, headH * 0.11);
-        ctx.fillRect(hcx - noseW / 2, headY + headH * 0.56, noseW, noseH);
-
-        // Mouth
+        ctx.fillRect(hcx - Math.max(1, headW*0.04), headY + headH*0.56, Math.max(1, headW*0.08), Math.max(1, headH*0.11));
         ctx.fillStyle = `rgb(${Math.round(148*s)},${Math.round(82*s)},${Math.round(68*s)})`;
-        const mw = Math.max(1, headW * 0.30);
-        const mh = Math.max(1, headH * 0.07);
-        ctx.fillRect(hcx - mw / 2, headY + headH * 0.73, mw, mh);
+        ctx.fillRect(hcx - Math.max(1, headW*0.15), headY + headH*0.73, Math.max(1, headW*0.30), Math.max(1, headH*0.07));
 
-        // --- NECK ---
+        // ---- NECK ----
         ctx.fillStyle = skin;
         ctx.fillRect(neckX, neckY, neckW, neckH);
 
-        // --- SHOULDERS (slightly wider strip) ---
+        // ---- TORSO ----
         ctx.fillStyle = uniform;
         ctx.fillRect(shoulderX, torsoY, shoulderW, torsoH * 0.11);
-
-        // --- TORSO with subtle centre seam ---
         ctx.fillRect(torsoX, torsoY + torsoH * 0.11, torsoW, torsoH * 0.89);
-        ctx.fillStyle = uniformDark;
-        const seamW = Math.max(1, torsoW * 0.06);
-        ctx.fillRect(hcx - seamW / 2, torsoY + torsoH * 0.11, seamW, torsoH * 0.89);
+        ctx.fillStyle = uniformDk;
+        ctx.fillRect(hcx - Math.max(1, torsoW*0.03), torsoY + torsoH*0.11, Math.max(1, torsoW*0.06), torsoH*0.89);
 
-        // --- ARMS ---
+        // ---- ARMS (animated) ----
         ctx.fillStyle = uniform;
-        ctx.fillRect(sx, torsoY + torsoH * 0.11, aw, torsoH * 0.68);
-        ctx.fillRect(sx + sw - aw, torsoY + torsoH * 0.11, aw, torsoH * 0.68);
-        // Forearms (skin)
+        ctx.fillRect(sx,          lArmY, aw, torsoH * 0.68);
+        ctx.fillRect(sx + sw - aw, rArmY, aw, torsoH * 0.68);
         ctx.fillStyle = skin;
-        ctx.fillRect(sx, torsoY + torsoH * 0.79, aw, torsoH * 0.21);
-        ctx.fillRect(sx + sw - aw, torsoY + torsoH * 0.79, aw, torsoH * 0.21);
+        ctx.fillRect(sx,          lArmY + torsoH * 0.68, aw, torsoH * 0.21);
+        ctx.fillRect(sx + sw - aw, rArmY + torsoH * 0.68, aw, torsoH * 0.21);
 
-        // --- GUN in right hand ---
-        ctx.fillStyle = gunMetal;
-        const ghx = sx + sw - aw;
-        const ghy = torsoY + torsoH * 0.92;
-        const gripH = torsoH * 0.18;
-        const gripW = aw * 0.55;
-        ctx.fillRect(ghx + aw * 0.1, ghy, gripW, gripH);
-        const barrelW = aw * 1.3;
-        const barrelH = Math.max(2, torsoH * 0.07);
-        ctx.fillRect(ghx - barrelW * 0.7, ghy + gripH * 0.15, barrelW, barrelH);
+        // ---- GUN ----
+        if (isShooting) {
+            // Two-handed aimed pose — gun centred, barrel facing camera (foreshortened)
+            ctx.fillStyle = gunMetal;
+            const gunCX = hcx;
+            const gunY  = torsoY + torsoH * 0.52 + rArmY - (torsoY + torsoH * 0.11);
+            const slideW = sw * 0.24;
+            const slideH = Math.max(3, torsoH * 0.13);
+            ctx.fillRect(gunCX - slideW * 0.5, gunY, slideW, slideH);
+            // Barrel end (dark circle — foreshortened barrel facing you)
+            const bR = Math.max(2, slideW * 0.14);
+            ctx.fillStyle = '#0a0a0a';
+            ctx.beginPath();
+            ctx.arc(gunCX - slideW * 0.5 + bR, gunY + slideH * 0.38, bR, 0, Math.PI * 2);
+            ctx.fill();
+            // Grip
+            ctx.fillStyle = gunMetal;
+            ctx.fillRect(gunCX - slideW * 0.06, gunY + slideH * 0.8, slideW * 0.28, torsoH * 0.13);
+            // Muzzle flash
+            if (muzzleFlash) {
+                ctx.fillStyle = `rgba(255,220,50,${0.9*s})`;
+                ctx.beginPath();
+                ctx.arc(gunCX - slideW * 0.5 + bR, gunY + slideH * 0.38, bR * 3.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = `rgba(255,255,200,${0.7*s})`;
+                ctx.beginPath();
+                ctx.arc(gunCX - slideW * 0.5 + bR, gunY + slideH * 0.38, bR * 1.2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        } else {
+            // Gun at right side, follows arm swing
+            ctx.fillStyle = gunMetal;
+            const ghx  = sx + sw - aw;
+            const ghy  = rArmY + torsoH * 0.82;
+            const grH  = torsoH * 0.18;
+            const grW  = aw * 0.55;
+            ctx.fillRect(ghx + aw * 0.1, ghy, grW, grH);
+            ctx.fillRect(ghx - aw * 0.9, ghy + grH * 0.15, aw * 1.3, Math.max(2, torsoH * 0.07));
+        }
 
-        // --- UPPER LEGS ---
+        // ---- UPPER LEGS (animated) ----
         ctx.fillStyle = pants;
-        ctx.fillRect(llx, legY, lw, upperLegH);
-        ctx.fillRect(lrx, legY, lw, upperLegH);
-        // Leg seam shadow
-        ctx.fillStyle = pantsDark;
-        ctx.fillRect(llx + lw * 0.85, legY, Math.max(1, lw * 0.1), upperLegH);
-        ctx.fillRect(lrx, legY, Math.max(1, lw * 0.1), upperLegH);
+        ctx.fillRect(llx, legY + lLegOff, lw, upperLegH - Math.abs(lLegOff) * 0.5);
+        ctx.fillRect(lrx, legY + rLegOff, lw, upperLegH - Math.abs(rLegOff) * 0.5);
+        ctx.fillStyle = pantsDk;
+        ctx.fillRect(llx + lw * 0.85, legY + lLegOff, Math.max(1, lw * 0.1), upperLegH - Math.abs(lLegOff) * 0.5);
+        ctx.fillRect(lrx,             legY + rLegOff, Math.max(1, lw * 0.1), upperLegH - Math.abs(rLegOff) * 0.5);
 
-        // --- LOWER LEGS (slight taper) ---
-        const llw = lw * 0.86;
+        // ---- LOWER LEGS (follow with damped phase) ----
+        const lLowerY = lowerLegY + lLowerOff;
+        const rLowerY = lowerLegY + rLowerOff;
         ctx.fillStyle = pants;
-        ctx.fillRect(llx, lowerLegY, llw, lowerLegH);
-        ctx.fillRect(lrx, lowerLegY, llw, lowerLegH);
+        ctx.fillRect(llx, lLowerY, llw, lowerLegH);
+        ctx.fillRect(lrx, rLowerY, llw, lowerLegH);
 
-        // --- BOOTS ---
+        // ---- BOOTS ----
         ctx.fillStyle = boot;
-        ctx.fillRect(llx - lw * 0.04, bootY, llw + lw * 0.08, bootH);
-        ctx.fillRect(lrx - lw * 0.04, bootY, llw + lw * 0.08, bootH);
+        ctx.fillRect(llx - lw * 0.04, lLowerY + lowerLegH, llw + lw * 0.08, bootH);
+        ctx.fillRect(lrx - lw * 0.04, rLowerY + lowerLegH, llw + lw * 0.08, bootH);
     }
 
     // ---- WEAPON SPRITE — PP7 + human hand (GoldenEye style) ---------------
@@ -1341,6 +1383,7 @@
         const dx = tx - e.x, dy = ty - e.y;
         const d = Math.sqrt(dx*dx + dy*dy);
         if (d < 1) return;
+        e.animTick = (e.animTick || 0) + 1;
         const nx = e.x + (dx/d) * speed;
         const ny = e.y + (dy/d) * speed;
         // Try diagonal move, fall back to axis-aligned slides
