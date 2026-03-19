@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>Lode Runner: Final Robust Edition</title>
     <style>
-        body { background-color: #111; color: white; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
+        body { background-color: #111; color: white; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px 0; box-sizing: border-box; }
         #game-container { border: 4px solid #555; background-color: #000; position: relative; box-shadow: 0 0 20px #000; }
         .hud { width: 640px; display: flex; justify-content: space-between; padding: 10px 0; font-size: 22px; color: #ffd700; text-transform: uppercase; }
         #win-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 10; gap: 6px; }
@@ -19,6 +19,11 @@
         #gameover-screen h1 { color: #e74c3c; font-size: 36px; margin: 0; }
         #gameover-screen p { color: #aaa; font-size: 16px; margin: 0; }
         #gameover-screen button { font-family: 'Courier New', monospace; background: #e74c3c; color: #fff; border: none; padding: 10px 32px; font-size: 17px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
+        #controls { width: 640px; margin-top: 10px; border: 2px solid #555; background: #1a1a1a; padding: 12px 20px; box-sizing: border-box; display: flex; gap: 32px; flex-wrap: wrap; }
+        #controls .ctrl-title { width: 100%; color: #ffd700; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+        #controls .ctrl-group { display: flex; flex-direction: column; gap: 4px; }
+        #controls .ctrl-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #ccc; }
+        #controls .key { background: #333; border: 1px solid #666; border-bottom: 2px solid #888; border-radius: 3px; padding: 1px 7px; font-size: 11px; color: #fff; white-space: nowrap; min-width: 20px; text-align: center; }
     </style>
 </head>
 <body>
@@ -41,6 +46,22 @@
             <p id="win-time"></p>
             <div id="leaderboard"></div>
             <button onclick="location.reload()">PLAY AGAIN</button>
+        </div>
+    </div>
+
+    <div id="controls">
+        <div class="ctrl-title">Controls</div>
+        <div class="ctrl-group">
+            <div class="ctrl-row"><span class="key">←</span><span class="key">→</span> Move left / right</div>
+            <div class="ctrl-row"><span class="key">↑</span> Climb ladder up</div>
+            <div class="ctrl-row"><span class="key">↓</span> Climb ladder down</div>
+        </div>
+        <div class="ctrl-group">
+            <div class="ctrl-row"><span class="key">↑</span><span class="key">↓</span> Move along bars</div>
+        </div>
+        <div class="ctrl-group">
+            <div class="ctrl-row">Collect all 6 gold pieces to win</div>
+            <div class="ctrl-row">Avoid the guards — they chase you!</div>
         </div>
     </div>
 
