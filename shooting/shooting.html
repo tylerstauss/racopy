@@ -523,14 +523,15 @@
 
                 } else if (isFloor) {
                     // FLOOR — GoldenEye beige stone tiles with grout lines
-                    const tX = fx - Math.floor(fx);
-                    const tY = fy - Math.floor(fy);
-                    if (tX < 0.055 || tX > 0.945 || tY < 0.055 || tY > 0.945) {
+                    const sfx = fx * 4, sfy = fy * 4;
+                    const tX = sfx - Math.floor(sfx);
+                    const tY = sfy - Math.floor(sfy);
+                    if (tX < 0.01375 || tX > 0.98625 || tY < 0.01375 || tY > 0.98625) {
                         data[pidx]   = Math.round(112 * fShade);
                         data[pidx+1] = Math.round(102 * fShade);
                         data[pidx+2] = Math.round(82  * fShade);
                     } else {
-                        const h = ((Math.floor(fx) * 73856093) ^ (Math.floor(fy) * 19349663)) & 0xFF;
+                        const h = ((Math.floor(sfx) * 73856093) ^ (Math.floor(sfy) * 19349663)) & 0xFF;
                         const base = 168 + Math.round((h / 255) * 26);
                         data[pidx]   = Math.round(base       * fShade);
                         data[pidx+1] = Math.round((base - 13) * fShade);
