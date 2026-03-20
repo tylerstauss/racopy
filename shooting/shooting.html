@@ -175,7 +175,8 @@
             <div class="title">LIBRARY STACKS</div>
             <div style="color:#8bc34a; margin:15px;">Goldeneye-style library infiltration</div>
             <div style="color:#aaa; font-size:13px; margin:15px;">W/S Forward·Back &nbsp;·&nbsp; A/D Strafe &nbsp;·&nbsp; ←→ Turn</div>
-            <div style="color:#aaa; font-size:13px; margin-bottom:20px;">Space / Click to Fire &nbsp;·&nbsp; Mouse Look &nbsp;·&nbsp; 1-4 Switch Weapon</div>
+            <div style="color:#aaa; font-size:13px; margin-bottom:8px;">Space / Click to Fire &nbsp;·&nbsp; Mouse Look &nbsp;·&nbsp; 1-4 Switch Weapon</div>
+            <div style="color:#aaa; font-size:13px; margin-bottom:20px;">C=Crouch &nbsp;·&nbsp; G=Grenade &nbsp;·&nbsp; RMB=ADS &nbsp;·&nbsp; Esc=Pause</div>
             <button onclick="startGame()" style="font-size:20px; padding:10px 30px;">ENTER</button>
         </div>
     </div>
@@ -222,14 +223,98 @@
                 <div style="display:flex; justify-content:space-between; gap:10px;"><span style="background:#2a3a2a; border:1px solid #4a6a4a; border-bottom:2px solid #6a8a6a; border-radius:3px; padding:1px 6px; color:#cfc;">Space</span><span>Fire</span></div>
                 <div style="display:flex; justify-content:space-between; gap:10px;"><span style="background:#2a3a2a; border:1px solid #4a6a4a; border-bottom:2px solid #6a8a6a; border-radius:3px; padding:1px 6px; color:#cfc;">Mouse</span><span>Look &amp; click to fire</span></div>
                 <div style="display:flex; justify-content:space-between; gap:10px;"><span style="background:#2a3a2a; border:1px solid #4a6a4a; border-bottom:2px solid #6a8a6a; border-radius:3px; padding:1px 6px; color:#cfc;">1–4</span><span>Switch weapon</span></div>
+                <div style="display:flex; justify-content:space-between; gap:10px;"><span style="background:#2a3a2a; border:1px solid #4a6a4a; border-bottom:2px solid #6a8a6a; border-radius:3px; padding:1px 6px; color:#cfc;">C</span><span>Crouch</span></div>
+                <div style="display:flex; justify-content:space-between; gap:10px;"><span style="background:#2a3a2a; border:1px solid #4a6a4a; border-bottom:2px solid #6a8a6a; border-radius:3px; padding:1px 6px; color:#cfc;">G</span><span>Throw Grenade</span></div>
+                <div style="display:flex; justify-content:space-between; gap:10px;"><span style="background:#2a3a2a; border:1px solid #4a6a4a; border-bottom:2px solid #6a8a6a; border-radius:3px; padding:1px 6px; color:#cfc;">RMB</span><span>Aim Down Sights</span></div>
+                <div style="display:flex; justify-content:space-between; gap:10px;"><span style="background:#2a3a2a; border:1px solid #4a6a4a; border-bottom:2px solid #6a8a6a; border-radius:3px; padding:1px 6px; color:#cfc;">Esc</span><span>Pause</span></div>
             </div>
         </div>
+    </div>
+
+    <div id="pauseMenu" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:200; align-items:center; justify-content:center; flex-direction:column; gap:16px; font-family:'Courier New',monospace; color:#cfc;">
+        <div style="font-size:32px; letter-spacing:4px; margin-bottom:20px;">PAUSED</div>
+        <button onclick="resumeGame()" style="font-size:18px; padding:8px 24px;">RESUME</button>
+        <button onclick="resetGame()" style="font-size:18px; padding:8px 24px;">RESTART</button>
+        <button onclick="backToLobby()" style="font-size:18px; padding:8px 24px;">QUIT TO LOBBY</button>
     </div>
 
     <script>
     // =====================================================================
     // GOLDENEYE-STYLE FPS — LIBRARY MAP
     // =====================================================================
+
+    // ---- WEB AUDIO ---------------------------------------------------------
+    let audioCtx = null;
+    function getAudio() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        return audioCtx;
+    }
+    function playShot(gunType) {
+        try {
+            const ac = getAudio();
+            const buf = ac.createBuffer(1, ac.sampleRate * 0.15, ac.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < data.length; i++) {
+                const t = i / ac.sampleRate;
+                const env = Math.exp(-t * (gunType === 'shotgun' ? 18 : gunType === 'pp7' ? 30 : 25));
+                data[i] = (Math.random() * 2 - 1) * env;
+            }
+            const src = ac.createBufferSource();
+            src.buffer = buf;
+            const gain = ac.createGain();
+            gain.gain.setValueAtTime(gunType === 'shotgun' ? 0.9 : 0.6, ac.currentTime);
+            const filter = ac.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = gunType === 'sniper' ? 4000 : gunType === 'shotgun' ? 800 : 2000;
+            src.connect(filter); filter.connect(gain); gain.connect(ac.destination);
+            src.start();
+        } catch(e) {}
+    }
+    function playPickup() {
+        try {
+            const ac = getAudio();
+            [523, 659, 784].forEach((freq, i) => {
+                const osc = ac.createOscillator();
+                const gain = ac.createGain();
+                osc.frequency.value = freq;
+                osc.type = 'square';
+                gain.gain.setValueAtTime(0, ac.currentTime + i * 0.1);
+                gain.gain.linearRampToValueAtTime(0.15, ac.currentTime + i*0.1 + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + i*0.1 + 0.12);
+                osc.connect(gain); gain.connect(ac.destination);
+                osc.start(ac.currentTime + i * 0.1);
+                osc.stop(ac.currentTime + i * 0.1 + 0.12);
+            });
+        } catch(e) {}
+    }
+    function playAlert() {
+        try {
+            const ac = getAudio();
+            const osc = ac.createOscillator();
+            const gain = ac.createGain();
+            osc.frequency.setValueAtTime(300, ac.currentTime);
+            osc.frequency.linearRampToValueAtTime(800, ac.currentTime + 0.3);
+            gain.gain.setValueAtTime(0.2, ac.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.4);
+            osc.connect(gain); gain.connect(ac.destination);
+            osc.start(); osc.stop(ac.currentTime + 0.4);
+        } catch(e) {}
+    }
+    function playHit() {
+        try {
+            const ac = getAudio();
+            const buf = ac.createBuffer(1, ac.sampleRate * 0.08, ac.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < data.length; i++) {
+                data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ac.sampleRate * 0.02));
+            }
+            const src = ac.createBufferSource();
+            src.buffer = buf;
+            const gain = ac.createGain(); gain.gain.value = 0.5;
+            src.connect(gain); gain.connect(ac.destination);
+            src.start();
+        } catch(e) {}
+    }
 
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
@@ -312,6 +397,7 @@
         x: 30 * CS,
         y: 42 * CS,
         angle: -Math.PI / 2, // facing north
+        pitch: 0,
         health: 100,
         guns: {
             pp7:     { has: true,  ammo: 24 },
@@ -321,7 +407,11 @@
         },
         currentGun: 'pp7',
         bobPhase: 0,
-        bobOffset: 0
+        bobOffset: 0,
+        crouching: false,
+        heightOffset: 0,
+        aiming: false,
+        grenades: 2
     };
 
     const ENEMY_SPAWN = [
@@ -343,17 +433,25 @@
     ];
 
     let enemies = [];
+    const GUN_TYPES = ['pp7','kf7','shotgun','sniper'];
     function spawnEnemies() {
-        enemies = ENEMY_SPAWN.map((sp, i) => ({
-            x: sp.x, y: sp.y,
-            health: 100, active: true,
-            state: 'patrol',
-            waypoint: randomWaypoint(),
-            shootTimer: 0,
-            alertTime: 0,
-            type: i % 2,
-            animTick: Math.random() * 100  // offset so they don't all sync
-        }));
+        enemies = ENEMY_SPAWN.map((sp, i) => {
+            const r = Math.random();
+            const wt = r < 0.5 ? 'pp7' : r < 0.85 ? 'kf7' : r < 0.95 ? 'shotgun' : 'sniper';
+            return {
+                x: sp.x, y: sp.y,
+                health: 100, active: true,
+                state: 'patrol',
+                waypoint: randomWaypoint(),
+                shootTimer: 0,
+                alertTime: 0,
+                type: i % 2,
+                animTick: Math.random() * 100,  // offset so they don't all sync
+                weaponType: wt,
+                hitTimer: 0,
+                dyingTimer: 0
+            };
+        });
     }
 
     function randomWaypoint() {
@@ -369,6 +467,65 @@
     let zBuffer = new Float32Array(CW);
     let loopId = 0;
     let bulletTrails = [];
+    let corpses = [];
+    let grenades = [];
+
+    // ---- SCREEN SHAKE ------------------------------------------------------
+    let shakeTimer = 0, shakeIntensity = 0;
+    function startShake(intensity, duration) {
+        shakeIntensity = Math.max(shakeIntensity, intensity);
+        shakeTimer = Math.max(shakeTimer, duration);
+    }
+
+    // ---- CHEATS ------------------------------------------------------------
+    let cheatBuffer = [];
+    let cheatMessage = '';
+    let cheatMessageTimer = 0;
+    let G_cheats = { licence: false, invincible: false, turbo: false };
+    const CHEATS = {
+        'LICENCE':    () => { G_cheats.licence    = true; showCheat('LICENSE TO KILL'); },
+        'INVINCIBLE': () => { G_cheats.invincible = true; showCheat('INVINCIBLE'); },
+        'TURBO':      () => { G_cheats.turbo      = true; showCheat('TURBO MODE'); },
+        'ALLGUNS':    () => {
+            for (const g in player.guns) { player.guns[g].has = true; player.guns[g].ammo = GUN_DEFS[g].magSize * 2; }
+            showCheat('ALL GUNS');
+        },
+    };
+    function showCheat(name) {
+        cheatMessage = 'CHEAT: ' + name;
+        cheatMessageTimer = 180;
+    }
+    function checkCheats() {
+        const buf = cheatBuffer.join('');
+        for (const [code, fn] of Object.entries(CHEATS)) {
+            if (buf.endsWith(code)) { fn(); cheatBuffer = []; break; }
+        }
+    }
+
+    // ---- PAUSE -------------------------------------------------------------
+    let paused = false;
+    const pauseMenu = document.getElementById('pauseMenu');
+    function pauseGame() {
+        paused = true;
+        gameRunning = false;
+        pauseMenu.style.display = 'flex';
+        document.exitPointerLock();
+    }
+    function resumeGame() {
+        paused = false;
+        pauseMenu.style.display = 'none';
+        gameRunning = true;
+        const id = ++loopId;
+        loop(id);
+    }
+    function backToLobby() {
+        paused = false;
+        gameRunning = false;
+        pauseMenu.style.display = 'none';
+        document.getElementById('lobby').style.display = 'flex';
+    }
+    window.resumeGame = resumeGame;
+    window.backToLobby = backToLobby;
 
     // ---- GUN DEFINITIONS ---------------------------------------------------
     const GUN_DEFS = {
@@ -414,8 +571,15 @@
     document.addEventListener('mousemove', e => {
         if (document.pointerLockElement === canvas && gameRunning) {
             player.angle += e.movementX * 0.0025;
+            player.pitch -= e.movementY * 0.0025;
+            player.pitch = Math.max(-0.4, Math.min(0.4, player.pitch));
         }
     });
+
+    canvas.addEventListener('mousedown', e => {
+        if (e.button === 2 && gameRunning) { player.aiming = !player.aiming; e.preventDefault(); }
+    });
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
 
     window.addEventListener('keydown', e => {
         keys[e.code] = true;
@@ -426,12 +590,31 @@
         if (e.code === 'Digit2') switchGun('kf7');
         if (e.code === 'Digit3') switchGun('shotgun');
         if (e.code === 'Digit4') switchGun('sniper');
+        if (e.code === 'KeyC' && gameRunning) player.crouching = true;
+        if (e.code === 'KeyG' && gameRunning && player.grenades > 0) {
+            player.grenades--;
+            grenades.push({
+                x: player.x, y: player.y,
+                vx: Math.cos(player.angle) * 5, vy: Math.sin(player.angle) * 5,
+                fuse: 180, active: true
+            });
+        }
+        if (e.code === 'Escape') {
+            if (gameRunning) { pauseGame(); }
+            else if (paused) { resumeGame(); }
+        }
+        cheatBuffer.push(e.key.toUpperCase());
+        if (cheatBuffer.length > 12) cheatBuffer.shift();
+        checkCheats();
     });
-    window.addEventListener('keyup', e => { keys[e.code] = false; });
+    window.addEventListener('keyup', e => {
+        keys[e.code] = false;
+        if (e.code === 'KeyC') player.crouching = false;
+    });
 
     // ---- RAYCASTER ---------------------------------------------------------
-    const FOV = Math.PI / 2.5;
-    const HALF_FOV = FOV / 2;
+    let FOV = Math.PI / 2.5;
+    let HALF_FOV = FOV / 2;
 
     // Wall colors: [NS-side, EW-side]
     const WALL_COLORS = {
@@ -440,7 +623,9 @@
     };
 
     function render3D() {
-        const horizonY = Math.round(CH / 2 + player.bobOffset);
+        let shakeY = 0;
+        if (shakeTimer > 0) { shakeY = (Math.random()-0.5)*shakeIntensity; shakeTimer--; shakeIntensity *= 0.92; }
+        const horizonY = Math.round(CH / 2 + player.bobOffset + player.pitch * CH + player.heightOffset * CH + shakeY);
 
         // Pre-allocate wall data arrays
         const wTop    = new Int32Array(CW);
@@ -507,20 +692,39 @@
                 const pidx = (y * CW + x) << 2;
 
                 if (y >= wTop[x] && y < wBot[x] && wBot[x] > wTop[x]) {
-                    // WALL — two flat panels: top=gray, bottom=green
-                    const wallY = (y - wTopRaw[x]) / wH[x];
+                    // WALL — tile-based procedural textures
+                    const wTexY = (y - wTopRaw[x]) / wH[x];
+                    const tX = wTexX[x], tY = wTexY;
                     const shade = Math.max(0.05, 1.0 - zBuffer[x] * 0.018);
                     const sD = wSide[x] ? 0.68 : 1.0;
                     const s = shade * sD;
                     let r, g, b;
-                    if (wallY < 0.5) {
-                        r = 110; g = 110; b = 110; // gray top panel
+                    if (wTile[x] === 1) {
+                        // Stone: block pattern + grout lines
+                        if (tX < 0.03 || tY < 0.03 || tX > 0.97 || tY > 0.97) {
+                            r = Math.round(80 * s); g = Math.round(78 * s); b = Math.round(72 * s);
+                        } else {
+                            const h2 = ((Math.floor(tX*4)*73856093)^(Math.floor(tY*4)*19349663)) & 0xFF;
+                            const v = 100 + Math.round((h2/255)*30);
+                            r = Math.round(v * s); g = Math.round(v*0.98*s); b = Math.round(v*0.88*s);
+                        }
+                    } else if (wTile[x] === 2) {
+                        // Bookshelf
+                        const BOOK_COLORS = [[160,40,40],[40,80,160],[40,120,40],[140,100,30],[80,40,120],[150,80,30],[40,100,100],[120,40,80]];
+                        const bookIdx = Math.floor(tX * 8);
+                        const bc = BOOK_COLORS[bookIdx % BOOK_COLORS.length];
+                        if (tX % (1/8) < 0.015) { r=40;g=30;b=20; }
+                        else if (tY < 0.08 || tY > 0.92) { r=80;g=65;b=45; }
+                        else { r=Math.round(bc[0]*s);g=Math.round(bc[1]*s);b=Math.round(bc[2]*s); }
                     } else {
-                        r = 74; g = 106; b = 74;   // green bottom panel
+                        // Default two-panel
+                        if (tY < 0.5) { r = 110; g = 110; b = 110; }
+                        else          { r = 74;  g = 106; b = 74;  }
+                        r = Math.round(r * s); g = Math.round(g * s); b = Math.round(b * s);
                     }
-                    data[pidx]   = Math.round(r * s);
-                    data[pidx+1] = Math.round(g * s);
-                    data[pidx+2] = Math.round(b * s);
+                    data[pidx]   = r;
+                    data[pidx+1] = g;
+                    data[pidx+2] = b;
 
                 } else if (isFloor) {
                     // FLOOR — GoldenEye beige stone tiles with grout lines
@@ -586,7 +790,7 @@
             const spriteH = Math.min(CH * 0.66, (CH / corrDist) * 0.9);
             const spriteW = Math.round(spriteH * 0.55);
             const sx = Math.round(screenX - spriteW / 2);
-            const floorY = Math.round(CH / 2 + player.bobOffset + (CH / corrDist) * 0.75);
+            const floorY = Math.round(CH / 2 + player.bobOffset + player.pitch * CH + player.heightOffset * CH + (CH / corrDist) * 0.75);
             const sy = floorY - spriteH;
 
             const shade = Math.max(0.15, Math.min(1, 1.2 - corrDist * 0.016));
@@ -624,6 +828,8 @@
 
         const isWalking  = state === 'patrol' || state === 'alert';
         const isShooting = state === 'shoot';
+        const isHit      = state === 'hit';
+        const isDying    = state === 'dying';
         const walkPhase  = isWalking ? Math.sin(animTick * 0.22) : 0;
 
         const skin      = `rgb(${Math.round(218*s)},${Math.round(172*s)},${Math.round(132*s)})`;
@@ -682,6 +888,14 @@
         if (isShooting) {
             lArmY -= torsoH * 0.28;
             rArmY -= torsoH * 0.28;
+        }
+        if (isHit) {
+            lArmY -= torsoH * 0.15;
+        }
+        // Dying: squash the figure by scaling sh in caller; arms droop
+        if (isDying) {
+            lArmY += torsoH * 0.22;
+            rArmY += torsoH * 0.22;
         }
 
         // Leg swing: lower leg and boot follow a delayed phase
@@ -796,6 +1010,160 @@
         ctx.fillStyle = boot;
         ctx.fillRect(llx - lw * 0.04, lLowerY + lowerLegH, llw + lw * 0.08, bootH);
         ctx.fillRect(lrx - lw * 0.04, rLowerY + lowerLegH, llw + lw * 0.08, bootH);
+    }
+
+    // ---- CORPSE RENDERING --------------------------------------------------
+    function drawCorpses() {
+        const sorted = [...corpses].sort((a, b) => {
+            const da = (a.x - player.x)**2 + (a.y - player.y)**2;
+            const db = (b.x - player.x)**2 + (b.y - player.y)**2;
+            return db - da;
+        });
+        for (const c of sorted) {
+            const dx = c.x - player.x, dy = c.y - player.y;
+            const distWorld = Math.sqrt(dx*dx + dy*dy);
+            if (distWorld < 1) continue;
+            const enemyAngle = Math.atan2(dy, dx);
+            let angleDiff = enemyAngle - player.angle;
+            while (angleDiff >  Math.PI) angleDiff -= 2*Math.PI;
+            while (angleDiff < -Math.PI) angleDiff += 2*Math.PI;
+            if (Math.abs(angleDiff) > HALF_FOV + 0.25) continue;
+            const screenX = Math.round(CW / 2 + (angleDiff / FOV) * CW);
+            const corrDist = (distWorld / CS) * Math.cos(angleDiff);
+            if (corrDist <= 0) continue;
+            const spriteH = Math.min(CH * 0.18, (CH / corrDist) * 0.24);
+            const spriteW = Math.round(spriteH * 2.5);
+            const sx = Math.round(screenX - spriteW / 2);
+            const floorY = Math.round(CH / 2 + player.bobOffset + player.pitch * CH + player.heightOffset * CH + (CH / corrDist) * 0.75);
+            const sy = floorY - Math.round(spriteH * 0.5);
+            let visible = false;
+            for (let check = 0; check <= 4; check++) {
+                const col = Math.round(sx + spriteW * (check / 4));
+                if (col >= 0 && col < CW && corrDist < zBuffer[col]) { visible = true; break; }
+            }
+            if (!visible) continue;
+            const shade = Math.max(0.15, Math.min(1, 1.2 - corrDist * 0.016));
+            ctx.save();
+            ctx.beginPath();
+            for (let col = 0; col < spriteW; col++) {
+                const px = sx + col;
+                if (px >= 0 && px < CW && corrDist < zBuffer[px]) ctx.rect(px, 0, 1, CH);
+            }
+            ctx.clip();
+            // Draw flat squashed figure
+            const s = shade;
+            const type = c.type || 0;
+            const uniform = type === 0
+                ? `rgb(${Math.round(120*s)},${Math.round(30*s)},${Math.round(30*s)})`
+                : `rgb(${Math.round(30*s)},${Math.round(80*s)},${Math.round(30*s)})`;
+            const pants = `rgb(${Math.round(25*s)},${Math.round(25*s)},${Math.round(36*s)})`;
+            ctx.fillStyle = uniform;
+            ctx.fillRect(sx, sy, spriteW * 0.6, spriteH * 0.55);
+            ctx.fillStyle = pants;
+            ctx.fillRect(sx + spriteW * 0.1, sy + spriteH * 0.5, spriteW * 0.85, spriteH * 0.5);
+            ctx.fillStyle = `rgb(${Math.round(160*s)},${Math.round(120*s)},${Math.round(90*s)})`;
+            ctx.beginPath();
+            ctx.ellipse(sx + spriteW * 0.05, sy + spriteH * 0.25, spriteH * 0.28, spriteH * 0.28, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    // ---- GRENADE RENDERING -------------------------------------------------
+    function drawGrenades() {
+        for (const g of grenades) {
+            if (!g.active) continue;
+            const dx = g.x - player.x, dy = g.y - player.y;
+            const distWorld = Math.sqrt(dx*dx + dy*dy);
+            if (distWorld < 1) continue;
+            const angle = Math.atan2(dy, dx);
+            let angleDiff = angle - player.angle;
+            while (angleDiff >  Math.PI) angleDiff -= 2*Math.PI;
+            while (angleDiff < -Math.PI) angleDiff += 2*Math.PI;
+            if (Math.abs(angleDiff) > HALF_FOV + 0.1) continue;
+            const screenX = Math.round(CW / 2 + (angleDiff / FOV) * CW);
+            const corrDist = (distWorld / CS) * Math.cos(angleDiff);
+            if (corrDist <= 0) continue;
+            const zCheck = Math.max(0, Math.min(CW - 1, screenX));
+            if (corrDist >= zBuffer[zCheck]) continue;
+            const wallH = (CH / corrDist) * 1.5;
+            const floorY = Math.round(CH / 2 + player.bobOffset + player.pitch * CH + player.heightOffset * CH + wallH * 0.5);
+            const r = Math.max(3, Math.round((CH / corrDist) * 0.08));
+            const sy = floorY - r;
+            ctx.save();
+            ctx.fillStyle = '#2a2a20';
+            ctx.beginPath();
+            ctx.ellipse(screenX, sy, r, r * 0.6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // fuse flicker
+            if (g.fuse % 10 < 5) {
+                ctx.fillStyle = 'rgba(255,100,0,0.9)';
+                ctx.beginPath();
+                ctx.arc(screenX + r * 0.3, sy - r * 0.5, r * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+    }
+
+    // ---- SCOPE OVERLAY -----------------------------------------------------
+    function drawScopeOverlay() {
+        const cx = CW / 2, cy = CH / 2;
+        const radius = Math.min(CW, CH) * 0.38;
+        ctx.save();
+        // Black vignette outside scope circle
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, CW, CH);
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+        // Scope border
+        ctx.strokeStyle = '#1a1a1a';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        // Green crosshair
+        ctx.strokeStyle = 'rgba(0,255,80,0.85)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(cx - radius, cy); ctx.lineTo(cx + radius, cy);
+        ctx.moveTo(cx, cy - radius); ctx.lineTo(cx, cy + radius);
+        ctx.stroke();
+        // Mil-dot style center markers
+        ctx.fillStyle = 'rgba(0,255,80,0.9)';
+        for (let i = -2; i <= 2; i++) {
+            if (i === 0) continue;
+            ctx.beginPath();
+            ctx.arc(cx + i * radius * 0.2, cy, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx, cy + i * radius * 0.2, 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    // ---- OBJECTIVES --------------------------------------------------------
+    const OBJECTIVES = [{ desc: 'Eliminate all guards', type: 'kill_all', done: false }];
+    function updateObjectives() {
+        const alive = enemies.filter(e => e.active).length;
+        OBJECTIVES[0].done = (alive === 0 && enemies.length > 0);
+    }
+    function drawObjectiveHUD() {
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(8, 8, 220, 24 + OBJECTIVES.length * 22);
+        ctx.font = 'bold 11px monospace';
+        ctx.fillStyle = '#8bc34a';
+        ctx.fillText('OBJECTIVES', 16, 24);
+        OBJECTIVES.forEach((obj, i) => {
+            ctx.fillStyle = obj.done ? '#4caf50' : '#ccc';
+            ctx.fillText((obj.done ? '\u2713 ' : '\u25cb ') + obj.desc, 16, 44 + i * 22);
+        });
+        ctx.restore();
     }
 
     // ---- WEAPON SPRITE — PP7 + human hand (GoldenEye style) ---------------
@@ -1149,7 +1517,7 @@
             if (corrDist >= zBuffer[zCheck]) continue;
 
             const wallH = (CH / corrDist) * 1.5;
-            const floorY = Math.round(CH / 2 + player.bobOffset + wallH * 0.5);
+            const floorY = Math.round(CH / 2 + player.bobOffset + player.pitch * CH + player.heightOffset * CH + wallH * 0.5);
             const spriteH = Math.min(55, Math.round((CH / corrDist) * 0.55));
             const spriteW = Math.round(spriteH * (p.type === 'gun' ? 2.2 : 1.1));
             const sx = Math.round(screenX - spriteW / 2);
@@ -1254,42 +1622,49 @@
         gun.recoil = 15;
         gun.muzzleFlash = 3;
         gun.cooldown = gd.cooldown;
+        playShot(player.currentGun);
+        startShake(2, 6);
 
         // Bullet tracer from muzzle toward crosshair
         const muzzleX = 510;
         const muzzleY = CH - 30 - 84 - 38 - 38;
         bulletTrails.push({ age: 7, x1: muzzleX, y1: muzzleY, x2: CW / 2, y2: CH / 2 });
 
+        const adsSpreadMult = player.aiming ? 0.4 : 1.0;
         // Shotgun fires 3 pellets; other guns fire once
         const pellets = player.currentGun === 'shotgun' ? 3 : 1;
         for (let p = 0; p < pellets; p++) {
-            const offset = pellets > 1 ? (p - 1) * (gd.spread / 2) : 0;
+            const spread = gd.spread * adsSpreadMult;
+            const offset = pellets > 1 ? (p - 1) * (spread / 2) : 0;
             const aimAngle = player.angle + offset;
 
             let closest = null, closestDist = Infinity;
             for (const e of enemies) {
-                if (!e.active) continue;
+                if (!e.active || e.state === 'dying') continue;
                 const ex = e.x - player.x, ey = e.y - player.y;
                 const dist = Math.sqrt(ex*ex + ey*ey);
                 const eAngle = Math.atan2(ey, ex);
                 let ad = eAngle - aimAngle;
                 while (ad >  Math.PI) ad -= 2*Math.PI;
                 while (ad < -Math.PI) ad += 2*Math.PI;
-                if (Math.abs(ad) < gd.spread && dist < closestDist && hasLOS(player.x, player.y, e.x, e.y)) {
+                if (Math.abs(ad) < spread && dist < closestDist && hasLOS(player.x, player.y, e.x, e.y)) {
                     closest = e; closestDist = dist;
                 }
             }
             if (closest) {
                 let dmg = gd.damage;
+                if (G_cheats.licence) dmg = 1000;
                 if (player.currentGun === 'shotgun') {
                     dmg = Math.max(15, dmg * Math.max(0.2, 1 - closestDist / (CS * 8)));
                 }
                 closest.health -= dmg;
                 if (closest.health <= 0) {
-                    closest.active = false;
-                    closest.state = 'dead';
+                    closest.state = 'dying';
+                    closest.dyingTimer = 20;
                 } else {
-                    closest.state = 'alert';
+                    closest.state = 'hit';
+                    closest.hitTimer = 10;
+                    closest.hitDir = Math.atan2(closest.y - player.y, closest.x - player.x);
                 }
             }
         }
@@ -1317,10 +1692,31 @@
     const CHASE_DIST   = 900;   // keep chasing up to this far
     const SHOOT_DIST   = 500;   // switch to shoot state within this range
     const LOSE_DIST    = 1100;  // give up if player gets this far
+    const ALERT_RADIUS = 800;   // alert propagation radius
 
     function updateEnemies() {
         for (const e of enemies) {
             if (!e.active) continue;
+
+            // Hit reaction
+            if (e.state === 'hit') {
+                e.hitTimer--;
+                if (e.hitTimer <= 0) {
+                    e.state = e.health > 0 ? 'alert' : 'dying';
+                    if (e.health <= 0) e.dyingTimer = 20;
+                }
+                continue;
+            }
+            // Dying animation
+            if (e.state === 'dying') {
+                e.dyingTimer--;
+                if (e.dyingTimer <= 0) {
+                    e.active = false;
+                    corpses.push({ x: e.x, y: e.y, type: e.type });
+                    pickups.push({ type: 'gun', gun: e.weaponType || 'pp7', x: e.x, y: e.y, active: true, timer: 0 });
+                }
+                continue;
+            }
 
             const dx = player.x - e.x, dy = player.y - e.y;
             const dist = Math.sqrt(dx*dx + dy*dy);
@@ -1329,6 +1725,17 @@
             if (e.state === 'patrol') {
                 if (dist < DETECT_DIST && los) {
                     e.state = 'alert';
+                    e.alertTime = 0;
+                    playAlert();
+                    // Propagate alert to nearby enemies
+                    for (const other of enemies) {
+                        if (!other.active || other === e || other.state !== 'patrol') continue;
+                        const odx = other.x - e.x, ody = other.y - e.y;
+                        if (odx*odx + ody*ody < ALERT_RADIUS*ALERT_RADIUS) {
+                            other.state = 'alert';
+                            other.alertTime = 0;
+                        }
+                    }
                 } else {
                     moveToward(e, e.waypoint.x, e.waypoint.y, PATROL_SPEED);
                     const wpDx = e.waypoint.x - e.x, wpDy = e.waypoint.y - e.y;
@@ -1366,9 +1773,12 @@
                     if (e.shootTimer >= 75) { // ~1.25s at 60fps
                         e.shootTimer = 0;
                         if (gameRunning) {
-                            player.health -= 10;
-                            damageFlash = 8;
-                            regenTimer = 0;
+                            if (!G_cheats.invincible) {
+                                player.health -= 10;
+                                damageFlash = 8;
+                                regenTimer = 0;
+                                playHit();
+                            }
                         }
                     }
                 }
@@ -1399,6 +1809,36 @@
         }
     }
 
+    // ---- GRENADE LOGIC -----------------------------------------------------
+    function updateGrenades() {
+        for (let i = grenades.length - 1; i >= 0; i--) {
+            const g = grenades[i];
+            if (!g.active) { grenades.splice(i, 1); continue; }
+            g.x += g.vx; g.y += g.vy;
+            // wall bounce
+            if (mapSolid(Math.floor(g.x/CS), Math.floor((g.y - g.vy)/CS))) g.vx *= -0.7;
+            if (mapSolid(Math.floor((g.x - g.vx)/CS), Math.floor(g.y/CS))) g.vy *= -0.7;
+            g.fuse--;
+            if (g.fuse <= 0) {
+                // Explode
+                const GRENADE_RADIUS = 200;
+                for (const e of enemies) {
+                    if (!e.active || e.state === 'dying') continue;
+                    const edx = e.x - g.x, edy = e.y - g.y;
+                    const dist = Math.sqrt(edx*edx + edy*edy);
+                    if (dist < GRENADE_RADIUS) {
+                        const dmg = Math.round(80 * (1 - dist / GRENADE_RADIUS));
+                        e.health -= dmg;
+                        if (e.health <= 0) { e.state = 'dying'; e.dyingTimer = 20; }
+                        else { e.state = 'hit'; e.hitTimer = 10; }
+                    }
+                }
+                startShake(6, 20);
+                g.active = false;
+            }
+        }
+    }
+
     // ---- PICKUP LOGIC ------------------------------------------------------
     function updatePickups() {
         for (const p of pickups) {
@@ -1422,6 +1862,7 @@
             }
             p.active = false;
             p.timer = p.type === 'gun' ? PICKUP_RESPAWN_GUN : PICKUP_RESPAWN_AMMO;
+            playPickup();
         }
     }
 
@@ -1441,11 +1882,12 @@
         const left  = keys['KeyA'] ? 1 : 0;   // A = strafe left
         const right = keys['KeyD'] ? 1 : 0;   // D = strafe right
 
-        dx += Math.cos(player.angle) * (fwd - back) * SPEED;
-        dy += Math.sin(player.angle) * (fwd - back) * SPEED;
+        const speedMult = (player.crouching ? 0.6 : 1.0) * (G_cheats.turbo ? 3 : 1);
+        dx += Math.cos(player.angle) * (fwd - back) * SPEED * speedMult;
+        dy += Math.sin(player.angle) * (fwd - back) * SPEED * speedMult;
         // Strafe (perpendicular)
-        dx += Math.cos(player.angle + Math.PI/2) * (right - left) * SPEED;
-        dy += Math.sin(player.angle + Math.PI/2) * (right - left) * SPEED;
+        dx += Math.cos(player.angle + Math.PI/2) * (right - left) * SPEED * speedMult;
+        dy += Math.sin(player.angle + Math.PI/2) * (right - left) * SPEED * speedMult;
 
         const moving = dx !== 0 || dy !== 0;
 
@@ -1455,6 +1897,10 @@
         } else {
             player.bobOffset *= 0.85;
         }
+
+        // Crouch height offset
+        const targetHeight = player.crouching ? -0.35 : 0;
+        player.heightOffset = player.heightOffset * 0.85 + targetHeight * 0.15;
 
         // Collision: check X and Y separately with radius corners
         if (dx !== 0) {
@@ -1580,12 +2026,52 @@
         }
     }
 
-    // ---- DAMAGE FLASH ------------------------------------------------------
+    // ---- DAMAGE FLASH + STATUS HUD -----------------------------------------
     function drawDamageFlash() {
         if (damageFlash <= 0) return;
         ctx.fillStyle = `rgba(200,0,0,${damageFlash * 0.04})`;
         ctx.fillRect(0, 0, CW, CH);
         damageFlash--;
+    }
+
+    function drawStatusHUD() {
+        ctx.save();
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'left';
+        let statusY = CH - 12;
+        // Crouch indicator
+        if (player.crouching) {
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            ctx.fillRect(8, statusY - 14, 70, 18);
+            ctx.fillStyle = '#8bc34a';
+            ctx.fillText('CROUCH', 12, statusY);
+            statusY -= 22;
+        }
+        // ADS indicator
+        if (player.aiming) {
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            ctx.fillRect(8, statusY - 14, 50, 18);
+            ctx.fillStyle = '#ffcc00';
+            ctx.fillText('ADS', 12, statusY);
+            statusY -= 22;
+        }
+        // Grenade count
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(8, statusY - 14, 80, 18);
+        ctx.fillStyle = '#ff8c00';
+        ctx.fillText(`GREN: ${player.grenades}`, 12, statusY);
+        // Cheat message
+        if (cheatMessageTimer > 0) {
+            cheatMessageTimer--;
+            const alpha = Math.min(1, cheatMessageTimer / 20);
+            ctx.fillStyle = `rgba(0,0,0,${alpha * 0.7})`;
+            ctx.fillRect(CW/2 - 120, CH/2 - 40, 240, 32);
+            ctx.fillStyle = `rgba(255,220,0,${alpha})`;
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 16px monospace';
+            ctx.fillText(cheatMessage, CW/2, CH/2 - 20);
+        }
+        ctx.restore();
     }
 
     // ---- MAIN LOOP ---------------------------------------------------------
@@ -1594,11 +2080,19 @@
 
         updatePlayer();
         updateEnemies();
+        updateGrenades();
 
         // Gun timers
         if (gun.recoil > 0) gun.recoil--;
         if (gun.muzzleFlash > 0) gun.muzzleFlash--;
         if (gun.cooldown > 0) gun.cooldown--;
+
+        // ADS FOV update
+        const targetFOV = player.aiming
+            ? (player.currentGun === 'sniper' ? Math.PI/8 : Math.PI/4)
+            : Math.PI/2.5;
+        FOV = FOV * 0.85 + targetFOV * 0.15;
+        HALF_FOV = FOV / 2;
 
         // Health regen: starts 3s after last hit, +1 HP every 30 frames, cap at 100
         if (player.health > 0 && player.health < 100) {
@@ -1609,12 +2103,18 @@
         }
 
         render3D();
+        updateObjectives();
+        drawObjectiveHUD();
+        drawCorpses();
         drawEnemies();
         drawPickups();
+        drawGrenades();
         drawBulletTrails();
         drawWeapon();
+        if (player.aiming && player.currentGun === 'sniper') drawScopeOverlay();
         drawDamageFlash();
         drawCrosshair();
+        drawStatusHUD();
 
         updatePickups();
         updateHUD();
@@ -1632,11 +2132,14 @@
 
     function resetGame() {
         overlay.classList.remove('show');
+        if (pauseMenu) pauseMenu.style.display = 'none';
+        paused = false;
         gameRunning = false; // stop any running loop
         player = {
             x: 30 * CS,
             y: 42 * CS,
             angle: -Math.PI / 2,
+            pitch: 0,
             health: 100,
             guns: {
                 pp7:     { has: true,  ammo: 24 },
@@ -1646,12 +2149,27 @@
             },
             currentGun: 'pp7',
             bobPhase: 0,
-            bobOffset: 0
+            bobOffset: 0,
+            crouching: false,
+            heightOffset: 0,
+            aiming: false,
+            grenades: 2
         };
         gun = { recoil: 0, muzzleFlash: 0, cooldown: 0 };
         damageFlash = 0;
         regenTimer = 0;
         bulletTrails = [];
+        corpses = [];
+        grenades = [];
+        shakeTimer = 0;
+        shakeIntensity = 0;
+        G_cheats = { licence: false, invincible: false, turbo: false };
+        cheatBuffer = [];
+        cheatMessage = '';
+        cheatMessageTimer = 0;
+        FOV = Math.PI / 2.5;
+        HALF_FOV = FOV / 2;
+        OBJECTIVES[0].done = false;
         initPickups();
         spawnEnemies();
         gameRunning = true;
