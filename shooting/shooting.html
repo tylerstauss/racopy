@@ -549,56 +549,73 @@
 
     // ---- FURNITURE ---------------------------------------------------------
     const FURNITURE = [
-        // Tables scattered in open areas
-        { type: 'table', x: 8*CS,  y: 2*CS  },
-        { type: 'table', x: 25*CS, y: 2*CS  },
-        { type: 'table', x: 42*CS, y: 2*CS  },
-        { type: 'table', x: 8*CS,  y: 18*CS },
-        { type: 'table', x: 28*CS, y: 13*CS },
-        { type: 'table', x: 45*CS, y: 18*CS },
-        { type: 'table', x: 8*CS,  y: 30*CS },
-        { type: 'table', x: 25*CS, y: 30*CS },
-        { type: 'table', x: 42*CS, y: 30*CS },
-        // Chairs near tables
-        { type: 'chair', x: 7*CS,  y: 3*CS  },
-        { type: 'chair', x: 9*CS,  y: 3*CS  },
-        { type: 'chair', x: 24*CS, y: 3*CS  },
-        { type: 'chair', x: 26*CS, y: 3*CS  },
-        { type: 'chair', x: 41*CS, y: 3*CS  },
-        { type: 'chair', x: 43*CS, y: 3*CS  },
-        { type: 'chair', x: 7*CS,  y: 19*CS },
-        { type: 'chair', x: 9*CS,  y: 19*CS },
-        { type: 'chair', x: 44*CS, y: 19*CS },
-        { type: 'chair', x: 46*CS, y: 19*CS },
-        { type: 'chair', x: 7*CS,  y: 31*CS },
-        { type: 'chair', x: 26*CS, y: 31*CS },
-        // Desks along walls
-        { type: 'desk', x: 3*CS,  y: 7*CS  },
-        { type: 'desk', x: 3*CS,  y: 10*CS },
-        { type: 'desk', x: 3*CS,  y: 25*CS },
-        { type: 'desk', x: 57*CS, y: 7*CS  },
-        { type: 'desk', x: 57*CS, y: 25*CS },
-        { type: 'desk', x: 57*CS, y: 37*CS },
-        // Floor lamps
-        { type: 'lamp', x: 18*CS, y: 9*CS  },
-        { type: 'lamp', x: 35*CS, y: 9*CS  },
-        { type: 'lamp', x: 18*CS, y: 28*CS },
-        { type: 'lamp', x: 35*CS, y: 28*CS },
+        // ---- LEFT OUTER WALL desks (facing east = 0) ----
+        { type: 'desk',  x: 1.6*CS, y:  6*CS, facing: 0,           long: 1.4*CS, short: 0.55*CS },
+        { type: 'desk',  x: 1.6*CS, y: 10*CS, facing: 0,           long: 1.4*CS, short: 0.55*CS },
+        { type: 'desk',  x: 1.6*CS, y: 20*CS, facing: 0,           long: 1.4*CS, short: 0.55*CS },
+        { type: 'desk',  x: 1.6*CS, y: 32*CS, facing: 0,           long: 1.4*CS, short: 0.55*CS },
+        { type: 'desk',  x: 1.6*CS, y: 40*CS, facing: 0,           long: 1.4*CS, short: 0.55*CS },
+        // ---- RIGHT OUTER WALL desks (facing west = PI) ----
+        { type: 'desk',  x: 57.4*CS, y:  6*CS, facing: Math.PI,    long: 1.4*CS, short: 0.55*CS },
+        { type: 'desk',  x: 57.4*CS, y: 14*CS, facing: Math.PI,    long: 1.4*CS, short: 0.55*CS },
+        { type: 'desk',  x: 57.4*CS, y: 26*CS, facing: Math.PI,    long: 1.4*CS, short: 0.55*CS },
+        { type: 'desk',  x: 57.4*CS, y: 38*CS, facing: Math.PI,    long: 1.4*CS, short: 0.55*CS },
+
+        // ---- TOP BOOKSHELF ROOMS — tables + chairs inside ----
+        // Room 1 (cols 11-15, rows 11-14): table centered, chair near bottom
+        { type: 'table', x: 13*CS,  y: 12*CS, facing: 0,           long: 2.2*CS, short: 0.9*CS },
+        { type: 'chair', x: 13*CS,  y: 13.2*CS, facing: Math.PI/2, long: 0.7*CS, short: 0.7*CS },
+        // Room 2 (cols 31-35)
+        { type: 'table', x: 33*CS,  y: 12*CS, facing: 0,           long: 2.2*CS, short: 0.9*CS },
+        { type: 'chair', x: 33*CS,  y: 13.2*CS, facing: Math.PI/2, long: 0.7*CS, short: 0.7*CS },
+        // Room 3 (cols 50-54)
+        { type: 'table', x: 52*CS,  y: 12*CS, facing: 0,           long: 2.2*CS, short: 0.9*CS },
+        { type: 'chair', x: 52*CS,  y: 13.2*CS, facing: Math.PI/2, long: 0.7*CS, short: 0.7*CS },
+
+        // ---- MIDDLE ALCOVE ROOMS — table + chairs ----
+        { type: 'table', x:  5*CS, y: 24.5*CS, facing: Math.PI/2,  long: 1.6*CS, short: 0.8*CS },
+        { type: 'chair', x:  4.2*CS, y: 24.5*CS, facing: 0,        long: 0.65*CS, short: 0.65*CS },
+        { type: 'table', x: 17*CS, y: 24.5*CS, facing: Math.PI/2,  long: 1.6*CS, short: 0.8*CS },
+        { type: 'chair', x: 16.2*CS, y: 24.5*CS, facing: 0,        long: 0.65*CS, short: 0.65*CS },
+        { type: 'table', x: 29*CS, y: 24.5*CS, facing: Math.PI/2,  long: 1.6*CS, short: 0.8*CS },
+        { type: 'chair', x: 28.2*CS, y: 24.5*CS, facing: 0,        long: 0.65*CS, short: 0.65*CS },
+        { type: 'table', x: 39*CS, y: 24.5*CS, facing: Math.PI/2,  long: 1.6*CS, short: 0.8*CS },
+        { type: 'chair', x: 38.2*CS, y: 24.5*CS, facing: 0,        long: 0.65*CS, short: 0.65*CS },
+        { type: 'table', x: 49*CS, y: 24.5*CS, facing: Math.PI/2,  long: 1.6*CS, short: 0.8*CS },
+        { type: 'chair', x: 48.2*CS, y: 24.5*CS, facing: 0,        long: 0.65*CS, short: 0.65*CS },
+
+        // ---- BOTTOM BOOKSHELF ROOMS — tables + chairs ----
+        { type: 'table', x: 13*CS,  y: 35*CS, facing: 0,           long: 2.2*CS, short: 0.9*CS },
+        { type: 'chair', x: 13*CS,  y: 35.8*CS, facing: 3*Math.PI/2, long: 0.7*CS, short: 0.7*CS },
+        { type: 'table', x: 33*CS,  y: 35*CS, facing: 0,           long: 2.2*CS, short: 0.9*CS },
+        { type: 'chair', x: 33*CS,  y: 35.8*CS, facing: 3*Math.PI/2, long: 0.7*CS, short: 0.7*CS },
+        { type: 'table', x: 52*CS,  y: 35*CS, facing: 0,           long: 2.2*CS, short: 0.9*CS },
+        { type: 'chair', x: 52*CS,  y: 35.8*CS, facing: 3*Math.PI/2, long: 0.7*CS, short: 0.7*CS },
+
+        // ---- FLOOR LAMPS in corners of main corridors ----
+        { type: 'lamp',  x:  2*CS,  y:  2*CS,  facing: 0,          long: 0.25*CS, short: 0.25*CS },
+        { type: 'lamp',  x: 57*CS,  y:  2*CS,  facing: 0,          long: 0.25*CS, short: 0.25*CS },
+        { type: 'lamp',  x:  2*CS,  y: 43*CS,  facing: 0,          long: 0.25*CS, short: 0.25*CS },
+        { type: 'lamp',  x: 57*CS,  y: 43*CS,  facing: 0,          long: 0.25*CS, short: 0.25*CS },
+        { type: 'lamp',  x: 18*CS,  y:  9*CS,  facing: 0,          long: 0.25*CS, short: 0.25*CS },
+        { type: 'lamp',  x: 35*CS,  y:  9*CS,  facing: 0,          long: 0.25*CS, short: 0.25*CS },
+        { type: 'lamp',  x: 18*CS,  y: 28*CS,  facing: 0,          long: 0.25*CS, short: 0.25*CS },
+        { type: 'lamp',  x: 35*CS,  y: 28*CS,  facing: 0,          long: 0.25*CS, short: 0.25*CS },
     ];
 
     // ---- DOORS -------------------------------------------------------------
     const DOORS = [
-        // Room row 10-15: gaps at tx=13, tx=33, tx=52 at ty=15
+        // Top bookshelf rooms — bottom exits (row 15)
         { tx: 13, ty: 15, open: false, offset: 0, timer: 0 },
         { tx: 33, ty: 15, open: false, offset: 0, timer: 0 },
         { tx: 52, ty: 15, open: false, offset: 0, timer: 0 },
-        // Room row 23-26: gaps at tx=4, tx=19, tx=31, tx=41, tx=51
-        { tx: 4,  ty: 26, open: false, offset: 0, timer: 0 },
-        { tx: 19, ty: 26, open: false, offset: 0, timer: 0 },
-        { tx: 31, ty: 26, open: false, offset: 0, timer: 0 },
-        { tx: 41, ty: 26, open: false, offset: 0, timer: 0 },
-        { tx: 51, ty: 26, open: false, offset: 0, timer: 0 },
-        // Room row 34-37: same pattern
+        // Middle alcove rooms — bottom exits (row 26)
+        { tx:  5, ty: 26, open: false, offset: 0, timer: 0 },
+        { tx: 17, ty: 26, open: false, offset: 0, timer: 0 },
+        { tx: 29, ty: 26, open: false, offset: 0, timer: 0 },
+        { tx: 39, ty: 26, open: false, offset: 0, timer: 0 },
+        { tx: 49, ty: 26, open: false, offset: 0, timer: 0 },
+        // Bottom bookshelf rooms — bottom exits (row 37)
         { tx: 13, ty: 37, open: false, offset: 0, timer: 0 },
         { tx: 33, ty: 37, open: false, offset: 0, timer: 0 },
         { tx: 52, ty: 37, open: false, offset: 0, timer: 0 },
@@ -1522,7 +1539,6 @@
 
     // ---- FURNITURE RENDERING -----------------------------------------------
     function drawFurniture() {
-        // Sort farthest first
         const sorted = [...FURNITURE].sort((a, b) =>
             ((b.x-player.x)**2 + (b.y-player.y)**2) - ((a.x-player.x)**2 + (a.y-player.y)**2)
         );
@@ -1531,38 +1547,59 @@
             const distWorld = Math.sqrt(dx*dx + dy*dy);
             if (distWorld < 1) continue;
 
-            const angle = Math.atan2(dy, dx);
-            let angleDiff = angle - player.angle;
+            const toFurnitureAngle = Math.atan2(dy, dx); // player → furniture
+            let angleDiff = toFurnitureAngle - player.angle;
             while (angleDiff >  Math.PI) angleDiff -= 2*Math.PI;
             while (angleDiff < -Math.PI) angleDiff += 2*Math.PI;
-            if (Math.abs(angleDiff) > HALF_FOV + 0.3) continue;
+            if (Math.abs(angleDiff) > HALF_FOV + 0.4) continue;
+
+            const corrDist = (distWorld / CS) * Math.cos(angleDiff);
+            if (corrDist <= 0.1) continue;
 
             const screenX = Math.round(CW / 2 + (angleDiff / FOV) * CW);
-            const corrDist = (distWorld / CS) * Math.cos(angleDiff);
-            if (corrDist <= 0) continue;
-            if (screenX < -120 || screenX > CW + 120) continue;
+            if (screenX < -200 || screenX > CW + 200) continue;
 
             const zCheck = Math.max(0, Math.min(CW - 1, screenX));
             if (corrDist >= zBuffer[zCheck]) continue;
+
+            // Compute which face of the furniture the player sees
+            // relAngle = angle from furniture to player, relative to furniture facing
+            const toPlayerAngle = Math.atan2(-dy, -dx); // furniture → player
+            let relAngle = toPlayerAngle - (f.facing || 0);
+            while (relAngle >  Math.PI) relAngle -= 2*Math.PI;
+            while (relAngle < -Math.PI) relAngle += 2*Math.PI;
+
+            // Determine which face is visible
+            let face; // 'front', 'back', 'right', 'left'
+            const absRel = relAngle < 0 ? relAngle + 2*Math.PI : relAngle;
+            if      (absRel < Math.PI/4 || absRel >= 7*Math.PI/4) face = 'front';
+            else if (absRel < 3*Math.PI/4)  face = 'left';
+            else if (absRel < 5*Math.PI/4)  face = 'back';
+            else                            face = 'right';
+
+            // Effective visible width: long side when viewing from side, short side from front/back
+            const isSideView = (face === 'left' || face === 'right');
+            const effectiveWorldW = isSideView ? (f.long || CS) : (f.short || CS * 0.5);
+            // Perspective project to screen pixels
+            const spriteW = Math.round(effectiveWorldW * CW / (corrDist * CS * FOV));
 
             const wallH = (CH / corrDist) * 1.5;
             const horizonY = CH / 2 + player.bobOffset + player.pitch * CH + player.heightOffset * CH;
             const floorY = Math.round(horizonY + wallH * 0.5);
 
-            // Scale furniture sizes
             const scaleH = CH / corrDist;
-            let spriteH, spriteW;
-            if (f.type === 'table') { spriteH = Math.min(CH*0.4, scaleH * 0.55); spriteW = spriteH * 2.2; }
-            else if (f.type === 'chair') { spriteH = Math.min(CH*0.35, scaleH * 0.45); spriteW = spriteH * 0.9; }
-            else if (f.type === 'desk') { spriteH = Math.min(CH*0.38, scaleH * 0.5); spriteW = spriteH * 1.8; }
-            else { spriteH = Math.min(CH*0.55, scaleH * 0.8); spriteW = spriteH * 0.3; } // lamp
+            let spriteH;
+            if      (f.type === 'table') spriteH = Math.min(CH*0.4, scaleH * 0.55);
+            else if (f.type === 'chair') spriteH = Math.min(CH*0.35, scaleH * 0.45);
+            else if (f.type === 'desk')  spriteH = Math.min(CH*0.38, scaleH * 0.50);
+            else                         spriteH = Math.min(CH*0.55, scaleH * 0.80);
+            spriteH = Math.round(spriteH);
 
-            spriteH = Math.round(spriteH); spriteW = Math.round(spriteW);
             const sx = Math.round(screenX - spriteW / 2);
             const sy = Math.round(floorY - spriteH);
-            if (sy + spriteH < 0 || sy > CH || spriteH < 3) continue;
+            if (sy + spriteH < 0 || sy > CH || spriteH < 3 || spriteW < 1) continue;
 
-            // z-buffer center check
+            // Quick visibility check
             let visible = false;
             for (let check = 0; check <= 4; check++) {
                 const col = Math.round(sx + spriteW * (check / 4));
@@ -1577,92 +1614,157 @@
                 if (px >= 0 && px < CW && corrDist < zBuffer[px]) ctx.rect(px, 0, 1, CH);
             }
             ctx.clip();
-            drawFurnitureSprite(f.type, sx, sy, spriteW, spriteH, corrDist);
+            drawFurnitureSprite(f.type, sx, sy, spriteW, spriteH, corrDist, face);
             ctx.restore();
         }
     }
 
-    function drawFurnitureSprite(type, sx, sy, sw, sh, dist) {
+    function drawFurnitureSprite(type, sx, sy, sw, sh, dist, face) {
         const shade = Math.max(0.15, Math.min(1, 1.1 - dist * 0.015));
-        const s = shade;
+        // Side faces are slightly darker (like wall NS/EW shading)
+        const s = shade * ((face === 'left' || face === 'right') ? 0.75 : 1.0);
 
         if (type === 'table') {
-            // Table top
+            const topH = sh * 0.13;
+            const legH = sh * 0.58;
+            const topY = sy + sh * 0.28;
+            const legY = topY + topH;
+            const legW = Math.max(2, sw * 0.08);
+
+            // Tabletop surface
             ctx.fillStyle = `rgb(${Math.round(160*s)},${Math.round(110*s)},${Math.round(60*s)})`;
-            ctx.fillRect(sx, sy + sh*0.28, sw, sh*0.12);
-            // Table top highlight
-            ctx.fillStyle = `rgba(255,255,255,${0.18*s})`;
-            ctx.fillRect(sx, sy + sh*0.28, sw, sh*0.04);
-            // Legs (4 legs)
-            ctx.fillStyle = `rgb(${Math.round(120*s)},${Math.round(80*s)},${Math.round(40*s)})`;
-            const legW = Math.max(2, sw * 0.07);
-            const legH = sh * 0.60;
-            const legY = sy + sh * 0.40;
-            ctx.fillRect(sx + sw*0.05,            legY, legW, legH);
-            ctx.fillRect(sx + sw*0.88,            legY, legW, legH);
-            ctx.fillRect(sx + sw*0.05 + legW*0.5, legY + legH*0.1, Math.max(1,legW*0.7), legH*0.9);
-            // Shadow under table
-            ctx.fillStyle = `rgba(0,0,0,${0.25*s})`;
-            ctx.fillRect(sx + sw*0.06, legY + legH*0.7, sw*0.88, legH*0.25);
+            ctx.fillRect(sx, topY, sw, topH);
+            // Highlight on top edge
+            ctx.fillStyle = `rgba(255,255,255,${0.22*s})`;
+            ctx.fillRect(sx, topY, sw, topH * 0.3);
+
+            if (face === 'front' || face === 'back') {
+                // End-on view: two legs visible, narrow table edge
+                ctx.fillStyle = `rgb(${Math.round(120*s)},${Math.round(80*s)},${Math.round(40*s)})`;
+                ctx.fillRect(sx + sw*0.12, legY, legW, legH);
+                ctx.fillRect(sx + sw*0.80, legY, legW, legH);
+                // Dark underside
+                ctx.fillStyle = `rgba(0,0,0,${0.3*s})`;
+                ctx.fillRect(sx + sw*0.12 + legW, legY + legH*0.1, sw*0.68 - legW, sh*0.04);
+            } else {
+                // Side view: two legs visible plus apron/stretcher
+                ctx.fillStyle = `rgb(${Math.round(120*s)},${Math.round(80*s)},${Math.round(40*s)})`;
+                ctx.fillRect(sx + sw*0.06, legY, legW, legH);
+                ctx.fillRect(sx + sw*0.86, legY, legW, legH);
+                // Apron rail between legs
+                ctx.fillStyle = `rgb(${Math.round(140*s)},${Math.round(95*s)},${Math.round(50*s)})`;
+                ctx.fillRect(sx + sw*0.06 + legW, legY + legH*0.08, sw*0.80 - legW, legH * 0.14);
+                // Bottom stretcher
+                ctx.fillRect(sx + sw*0.06 + legW, legY + legH*0.82, sw*0.80 - legW, legH * 0.08);
+                // Wood grain lines
+                ctx.fillStyle = `rgba(0,0,0,${0.12*s})`;
+                for (let g = 0; g < 4; g++) {
+                    ctx.fillRect(sx + sw*0.1, topY + topH*(0.12 + g*0.22), sw*0.8, Math.max(1, topH*0.08));
+                }
+            }
         }
         else if (type === 'chair') {
-            // Seat
-            ctx.fillStyle = `rgb(${Math.round(140*s)},${Math.round(90*s)},${Math.round(50*s)})`;
-            ctx.fillRect(sx + sw*0.08, sy + sh*0.42, sw*0.84, sh*0.10);
-            // Back rest
-            ctx.fillStyle = `rgb(${Math.round(130*s)},${Math.round(85*s)},${Math.round(45*s)})`;
-            ctx.fillRect(sx + sw*0.18, sy + sh*0.05, sw*0.64, sh*0.38);
-            // Back slats
-            ctx.fillStyle = `rgb(${Math.round(100*s)},${Math.round(65*s)},${Math.round(35*s)})`;
-            for (let i = 0; i < 3; i++) {
-                ctx.fillRect(sx + sw*(0.25 + i*0.18), sy + sh*0.08, sw*0.08, sh*0.32);
+            if (face === 'front' || face === 'back') {
+                // Front: backrest + seat edge + two front legs
+                ctx.fillStyle = `rgb(${Math.round(130*s)},${Math.round(85*s)},${Math.round(45*s)})`;
+                ctx.fillRect(sx + sw*0.15, sy + sh*0.05, sw*0.70, sh*0.38); // backrest
+                // Slats
+                ctx.fillStyle = `rgb(${Math.round(100*s)},${Math.round(65*s)},${Math.round(35*s)})`;
+                for (let i = 0; i < 3; i++) {
+                    ctx.fillRect(sx + sw*(0.22 + i*0.19), sy + sh*0.08, sw*0.09, sh*0.32);
+                }
+                // Seat
+                ctx.fillStyle = `rgb(${Math.round(140*s)},${Math.round(95*s)},${Math.round(55*s)})`;
+                ctx.fillRect(sx + sw*0.08, sy + sh*0.43, sw*0.84, sh*0.10);
+                // Legs
+                const lw = Math.max(2, sw*0.11);
+                ctx.fillStyle = `rgb(${Math.round(110*s)},${Math.round(70*s)},${Math.round(35*s)})`;
+                ctx.fillRect(sx + sw*0.10, sy + sh*0.53, lw, sh*0.45);
+                ctx.fillRect(sx + sw*0.79, sy + sh*0.53, lw, sh*0.45);
+            } else {
+                // Side: profile view — backrest rising from seat, one leg pair
+                ctx.fillStyle = `rgb(${Math.round(130*s)},${Math.round(85*s)},${Math.round(45*s)})`;
+                ctx.fillRect(sx + sw*0.60, sy + sh*0.05, sw*0.28, sh*0.42); // backrest side
+                // Seat
+                ctx.fillStyle = `rgb(${Math.round(140*s)},${Math.round(95*s)},${Math.round(55*s)})`;
+                ctx.fillRect(sx + sw*0.08, sy + sh*0.43, sw*0.84, sh*0.10);
+                // Legs (two visible from side)
+                const lw = Math.max(2, sw*0.09);
+                ctx.fillStyle = `rgb(${Math.round(110*s)},${Math.round(70*s)},${Math.round(35*s)})`;
+                ctx.fillRect(sx + sw*0.10, sy + sh*0.53, lw, sh*0.45);
+                ctx.fillRect(sx + sw*0.76, sy + sh*0.53, lw, sh*0.45);
+                // Cross brace
+                ctx.fillRect(sx + sw*0.10 + lw, sy + sh*0.72, sw*0.66, Math.max(1,sh*0.05));
             }
-            // Legs
-            ctx.fillStyle = `rgb(${Math.round(110*s)},${Math.round(70*s)},${Math.round(35*s)})`;
-            const legW2 = Math.max(2, sw*0.10);
-            ctx.fillRect(sx + sw*0.10, sy + sh*0.52, legW2, sh*0.46);
-            ctx.fillRect(sx + sw*0.80, sy + sh*0.52, legW2, sh*0.46);
         }
         else if (type === 'desk') {
-            // Desk surface
+            const surfY = sy + sh*0.22;
+            const surfH = sh*0.10;
+            const bodyY = surfY + surfH;
+            const bodyH = sh*0.66;
+
+            // Desktop surface
             ctx.fillStyle = `rgb(${Math.round(175*s)},${Math.round(140*s)},${Math.round(90*s)})`;
-            ctx.fillRect(sx, sy + sh*0.22, sw, sh*0.10);
-            // Desk top highlight
-            ctx.fillStyle = `rgba(255,255,255,${0.15*s})`;
-            ctx.fillRect(sx, sy + sh*0.22, sw, sh*0.035);
-            // Cabinet body below
+            ctx.fillRect(sx, surfY, sw, surfH);
+            ctx.fillStyle = `rgba(255,255,255,${0.18*s})`;
+            ctx.fillRect(sx, surfY, sw, surfH*0.3);
+
+            // Cabinet body
             ctx.fillStyle = `rgb(${Math.round(155*s)},${Math.round(120*s)},${Math.round(75*s)})`;
-            ctx.fillRect(sx + sw*0.04, sy + sh*0.32, sw*0.92, sh*0.66);
-            // Drawer lines
-            ctx.fillStyle = `rgb(${Math.round(120*s)},${Math.round(90*s)},${Math.round(55*s)})`;
-            ctx.fillRect(sx + sw*0.04, sy + sh*0.54, sw*0.92, Math.max(1,sh*0.02));
-            ctx.fillRect(sx + sw*0.04, sy + sh*0.74, sw*0.92, Math.max(1,sh*0.02));
-            // Drawer handles
-            ctx.fillStyle = `rgb(${Math.round(200*s)},${Math.round(180*s)},${Math.round(100*s)})`;
-            ctx.fillRect(sx + sw*0.42, sy + sh*0.42, sw*0.16, Math.max(1,sh*0.025));
-            ctx.fillRect(sx + sw*0.42, sy + sh*0.62, sw*0.16, Math.max(1,sh*0.025));
-            ctx.fillRect(sx + sw*0.42, sy + sh*0.82, sw*0.16, Math.max(1,sh*0.025));
+            ctx.fillRect(sx + sw*0.03, bodyY, sw*0.94, bodyH);
+
+            if (face === 'front' || face === 'back') {
+                // Drawers visible on front
+                ctx.fillStyle = `rgb(${Math.round(120*s)},${Math.round(90*s)},${Math.round(55*s)})`;
+                ctx.fillRect(sx + sw*0.03, bodyY + bodyH*0.30, sw*0.94, Math.max(1,sh*0.02));
+                ctx.fillRect(sx + sw*0.03, bodyY + bodyH*0.62, sw*0.94, Math.max(1,sh*0.02));
+                // Drawer handles
+                ctx.fillStyle = `rgb(${Math.round(210*s)},${Math.round(185*s)},${Math.round(110*s)})`;
+                ctx.fillRect(sx + sw*0.40, bodyY + bodyH*0.14, sw*0.20, Math.max(2,sh*0.03));
+                ctx.fillRect(sx + sw*0.40, bodyY + bodyH*0.46, sw*0.20, Math.max(2,sh*0.03));
+                ctx.fillRect(sx + sw*0.40, bodyY + bodyH*0.78, sw*0.20, Math.max(2,sh*0.03));
+            } else {
+                // Side profile: just flat panel + edge shadow
+                ctx.fillStyle = `rgba(0,0,0,${0.2*s})`;
+                ctx.fillRect(sx + sw*0.03, bodyY, sw*0.06, bodyH); // left edge shadow
+                ctx.fillRect(sx + sw*0.88, bodyY, sw*0.09, bodyH); // right edge
+            }
         }
         else if (type === 'lamp') {
             // Pole
             ctx.fillStyle = `rgb(${Math.round(80*s)},${Math.round(70*s)},${Math.round(60*s)})`;
-            ctx.fillRect(sx + sw*0.35, sy + sh*0.2, sw*0.30, sh*0.75);
-            // Lamp shade
+            ctx.fillRect(sx + sw*0.35, sy + sh*0.2, sw*0.30, sh*0.72);
+            // Shade (trapezoid)
             ctx.fillStyle = `rgb(${Math.round(220*s)},${Math.round(200*s)},${Math.round(140*s)})`;
             ctx.beginPath();
             ctx.moveTo(sx + sw*0.05, sy + sh*0.20);
             ctx.lineTo(sx + sw*0.95, sy + sh*0.20);
-            ctx.lineTo(sx + sw*0.70, sy + sh*0.38);
-            ctx.lineTo(sx + sw*0.30, sy + sh*0.38);
+            ctx.lineTo(sx + sw*0.70, sy + sh*0.37);
+            ctx.lineTo(sx + sw*0.30, sy + sh*0.37);
             ctx.closePath();
             ctx.fill();
-            // Glow at bottom of shade
-            ctx.fillStyle = `rgba(255,240,180,${0.5*s})`;
-            ctx.fillRect(sx + sw*0.28, sy + sh*0.36, sw*0.44, sh*0.04);
+            // Warm glow below shade
+            ctx.fillStyle = `rgba(255,240,150,${0.55*s})`;
+            ctx.fillRect(sx + sw*0.28, sy + sh*0.35, sw*0.44, sh*0.04);
             // Base
             ctx.fillStyle = `rgb(${Math.round(60*s)},${Math.round(55*s)},${Math.round(45*s)})`;
-            ctx.fillRect(sx + sw*0.15, sy + sh*0.92, sw*0.70, sh*0.08);
+            ctx.fillRect(sx + sw*0.15, sy + sh*0.90, sw*0.70, sh*0.10);
         }
+    }
+
+    function furnitureSolid(px, py) {
+        for (const f of FURNITURE) {
+            if (f.type === 'lamp') continue; // lamps are thin, no collision
+            const half_long  = (f.long  || CS) * 0.5;
+            const half_short = (f.short || CS * 0.5) * 0.5;
+            // Rotate player position into furniture local space
+            const dx = px - f.x, dy = py - f.y;
+            const fa = f.facing || 0;
+            const localX =  dx * Math.cos(fa) + dy * Math.sin(fa);
+            const localY = -dx * Math.sin(fa) + dy * Math.cos(fa);
+            if (Math.abs(localX) < half_short + 8 && Math.abs(localY) < half_long + 8) return true;
+        }
+        return false;
     }
 
     // ---- DOOR LOGIC --------------------------------------------------------
@@ -2183,6 +2285,7 @@
                     canX = false; break;
                 }
             }
+            if (canX && furnitureSolid(nx, player.y)) canX = false;
             if (canX) player.x = nx;
         }
         if (dy !== 0) {
@@ -2194,6 +2297,7 @@
                     canY = false; break;
                 }
             }
+            if (canY && furnitureSolid(player.x, ny)) canY = false;
             if (canY) player.y = ny;
         }
     }
