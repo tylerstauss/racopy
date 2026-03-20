@@ -384,7 +384,13 @@
 
     function mapSolid(tx, ty) {
         if (tx < 0 || tx >= MAP_WIDTH || ty < 0 || ty >= MAP_HEIGHT) return true;
-        return MAP[ty][tx] > 0;
+        const t = MAP[ty][tx];
+        if (t === 3) {
+            // Check if this door is open
+            const door = DOORS.find(d => d.tx === tx && d.ty === ty);
+            return door ? !door.open : true;
+        }
+        return t > 0;
     }
 
     // ---- GAME STATE --------------------------------------------------------
@@ -541,6 +547,63 @@
     let pickups = [];
     let pickupPulse = 0;
 
+    // ---- FURNITURE ---------------------------------------------------------
+    const FURNITURE = [
+        // Tables scattered in open areas
+        { type: 'table', x: 8*CS,  y: 2*CS  },
+        { type: 'table', x: 25*CS, y: 2*CS  },
+        { type: 'table', x: 42*CS, y: 2*CS  },
+        { type: 'table', x: 8*CS,  y: 18*CS },
+        { type: 'table', x: 28*CS, y: 13*CS },
+        { type: 'table', x: 45*CS, y: 18*CS },
+        { type: 'table', x: 8*CS,  y: 30*CS },
+        { type: 'table', x: 25*CS, y: 30*CS },
+        { type: 'table', x: 42*CS, y: 30*CS },
+        // Chairs near tables
+        { type: 'chair', x: 7*CS,  y: 3*CS  },
+        { type: 'chair', x: 9*CS,  y: 3*CS  },
+        { type: 'chair', x: 24*CS, y: 3*CS  },
+        { type: 'chair', x: 26*CS, y: 3*CS  },
+        { type: 'chair', x: 41*CS, y: 3*CS  },
+        { type: 'chair', x: 43*CS, y: 3*CS  },
+        { type: 'chair', x: 7*CS,  y: 19*CS },
+        { type: 'chair', x: 9*CS,  y: 19*CS },
+        { type: 'chair', x: 44*CS, y: 19*CS },
+        { type: 'chair', x: 46*CS, y: 19*CS },
+        { type: 'chair', x: 7*CS,  y: 31*CS },
+        { type: 'chair', x: 26*CS, y: 31*CS },
+        // Desks along walls
+        { type: 'desk', x: 3*CS,  y: 7*CS  },
+        { type: 'desk', x: 3*CS,  y: 10*CS },
+        { type: 'desk', x: 3*CS,  y: 25*CS },
+        { type: 'desk', x: 57*CS, y: 7*CS  },
+        { type: 'desk', x: 57*CS, y: 25*CS },
+        { type: 'desk', x: 57*CS, y: 37*CS },
+        // Floor lamps
+        { type: 'lamp', x: 18*CS, y: 9*CS  },
+        { type: 'lamp', x: 35*CS, y: 9*CS  },
+        { type: 'lamp', x: 18*CS, y: 28*CS },
+        { type: 'lamp', x: 35*CS, y: 28*CS },
+    ];
+
+    // ---- DOORS -------------------------------------------------------------
+    const DOORS = [
+        // Room row 10-15: gaps at tx=13, tx=33, tx=52 at ty=15
+        { tx: 13, ty: 15, open: false, offset: 0, timer: 0 },
+        { tx: 33, ty: 15, open: false, offset: 0, timer: 0 },
+        { tx: 52, ty: 15, open: false, offset: 0, timer: 0 },
+        // Room row 23-26: gaps at tx=4, tx=19, tx=31, tx=41, tx=51
+        { tx: 4,  ty: 26, open: false, offset: 0, timer: 0 },
+        { tx: 19, ty: 26, open: false, offset: 0, timer: 0 },
+        { tx: 31, ty: 26, open: false, offset: 0, timer: 0 },
+        { tx: 41, ty: 26, open: false, offset: 0, timer: 0 },
+        { tx: 51, ty: 26, open: false, offset: 0, timer: 0 },
+        // Room row 34-37: same pattern
+        { tx: 13, ty: 37, open: false, offset: 0, timer: 0 },
+        { tx: 33, ty: 37, open: false, offset: 0, timer: 0 },
+        { tx: 52, ty: 37, open: false, offset: 0, timer: 0 },
+    ];
+
     function initPickups() {
         pickups = [
             { type: 'gun',  gun: 'kf7',     x: 10.5*CS, y:  5.5*CS, active: true, timer: 0 },
@@ -692,35 +755,16 @@
                 const pidx = (y * CW + x) << 2;
 
                 if (y >= wTop[x] && y < wBot[x] && wBot[x] > wTop[x]) {
-                    // WALL — tile-based procedural textures
-                    const wTexY = (y - wTopRaw[x]) / wH[x];
-                    const tX = wTexX[x], tY = wTexY;
+                    // WALL — grey top half, green bottom half
+                    const wallY = (y - wTopRaw[x]) / wH[x];
                     const shade = Math.max(0.05, 1.0 - zBuffer[x] * 0.018);
                     const sD = wSide[x] ? 0.68 : 1.0;
                     const s = shade * sD;
                     let r, g, b;
-                    if (wTile[x] === 1) {
-                        // Stone: block pattern + grout lines
-                        if (tX < 0.03 || tY < 0.03 || tX > 0.97 || tY > 0.97) {
-                            r = Math.round(80 * s); g = Math.round(78 * s); b = Math.round(72 * s);
-                        } else {
-                            const h2 = ((Math.floor(tX*4)*73856093)^(Math.floor(tY*4)*19349663)) & 0xFF;
-                            const v = 100 + Math.round((h2/255)*30);
-                            r = Math.round(v * s); g = Math.round(v*0.98*s); b = Math.round(v*0.88*s);
-                        }
-                    } else if (wTile[x] === 2) {
-                        // Bookshelf
-                        const BOOK_COLORS = [[160,40,40],[40,80,160],[40,120,40],[140,100,30],[80,40,120],[150,80,30],[40,100,100],[120,40,80]];
-                        const bookIdx = Math.floor(tX * 8);
-                        const bc = BOOK_COLORS[bookIdx % BOOK_COLORS.length];
-                        if (tX % (1/8) < 0.015) { r=40;g=30;b=20; }
-                        else if (tY < 0.08 || tY > 0.92) { r=80;g=65;b=45; }
-                        else { r=Math.round(bc[0]*s);g=Math.round(bc[1]*s);b=Math.round(bc[2]*s); }
+                    if (wallY < 0.5) {
+                        r = Math.round(110 * s); g = Math.round(110 * s); b = Math.round(110 * s);
                     } else {
-                        // Default two-panel
-                        if (tY < 0.5) { r = 110; g = 110; b = 110; }
-                        else          { r = 74;  g = 106; b = 74;  }
-                        r = Math.round(r * s); g = Math.round(g * s); b = Math.round(b * s);
+                        r = Math.round(74 * s); g = Math.round(106 * s); b = Math.round(74 * s);
                     }
                     data[pidx]   = r;
                     data[pidx+1] = g;
@@ -1044,12 +1088,7 @@
             if (!visible) continue;
             const shade = Math.max(0.15, Math.min(1, 1.2 - corrDist * 0.016));
             ctx.save();
-            ctx.beginPath();
-            for (let col = 0; col < spriteW; col++) {
-                const px = sx + col;
-                if (px >= 0 && px < CW && corrDist < zBuffer[px]) ctx.rect(px, 0, 1, CH);
-            }
-            ctx.clip();
+            ctx.globalAlpha = 1;
             // Draw flat squashed figure
             const s = shade;
             const type = c.type || 0;
@@ -1481,6 +1520,237 @@
         }
     }
 
+    // ---- FURNITURE RENDERING -----------------------------------------------
+    function drawFurniture() {
+        // Sort farthest first
+        const sorted = [...FURNITURE].sort((a, b) =>
+            ((b.x-player.x)**2 + (b.y-player.y)**2) - ((a.x-player.x)**2 + (a.y-player.y)**2)
+        );
+        for (const f of sorted) {
+            const dx = f.x - player.x, dy = f.y - player.y;
+            const distWorld = Math.sqrt(dx*dx + dy*dy);
+            if (distWorld < 1) continue;
+
+            const angle = Math.atan2(dy, dx);
+            let angleDiff = angle - player.angle;
+            while (angleDiff >  Math.PI) angleDiff -= 2*Math.PI;
+            while (angleDiff < -Math.PI) angleDiff += 2*Math.PI;
+            if (Math.abs(angleDiff) > HALF_FOV + 0.3) continue;
+
+            const screenX = Math.round(CW / 2 + (angleDiff / FOV) * CW);
+            const corrDist = (distWorld / CS) * Math.cos(angleDiff);
+            if (corrDist <= 0) continue;
+            if (screenX < -120 || screenX > CW + 120) continue;
+
+            const zCheck = Math.max(0, Math.min(CW - 1, screenX));
+            if (corrDist >= zBuffer[zCheck]) continue;
+
+            const wallH = (CH / corrDist) * 1.5;
+            const horizonY = CH / 2 + player.bobOffset + player.pitch * CH + player.heightOffset * CH;
+            const floorY = Math.round(horizonY + wallH * 0.5);
+
+            // Scale furniture sizes
+            const scaleH = CH / corrDist;
+            let spriteH, spriteW;
+            if (f.type === 'table') { spriteH = Math.min(CH*0.4, scaleH * 0.55); spriteW = spriteH * 2.2; }
+            else if (f.type === 'chair') { spriteH = Math.min(CH*0.35, scaleH * 0.45); spriteW = spriteH * 0.9; }
+            else if (f.type === 'desk') { spriteH = Math.min(CH*0.38, scaleH * 0.5); spriteW = spriteH * 1.8; }
+            else { spriteH = Math.min(CH*0.55, scaleH * 0.8); spriteW = spriteH * 0.3; } // lamp
+
+            spriteH = Math.round(spriteH); spriteW = Math.round(spriteW);
+            const sx = Math.round(screenX - spriteW / 2);
+            const sy = Math.round(floorY - spriteH);
+            if (sy + spriteH < 0 || sy > CH || spriteH < 3) continue;
+
+            // z-buffer center check
+            let visible = false;
+            for (let check = 0; check <= 4; check++) {
+                const col = Math.round(sx + spriteW * (check / 4));
+                if (col >= 0 && col < CW && corrDist < zBuffer[col]) { visible = true; break; }
+            }
+            if (!visible) continue;
+
+            ctx.save();
+            ctx.beginPath();
+            for (let col = 0; col < spriteW; col++) {
+                const px = sx + col;
+                if (px >= 0 && px < CW && corrDist < zBuffer[px]) ctx.rect(px, 0, 1, CH);
+            }
+            ctx.clip();
+            drawFurnitureSprite(f.type, sx, sy, spriteW, spriteH, corrDist);
+            ctx.restore();
+        }
+    }
+
+    function drawFurnitureSprite(type, sx, sy, sw, sh, dist) {
+        const shade = Math.max(0.15, Math.min(1, 1.1 - dist * 0.015));
+        const s = shade;
+
+        if (type === 'table') {
+            // Table top
+            ctx.fillStyle = `rgb(${Math.round(160*s)},${Math.round(110*s)},${Math.round(60*s)})`;
+            ctx.fillRect(sx, sy + sh*0.28, sw, sh*0.12);
+            // Table top highlight
+            ctx.fillStyle = `rgba(255,255,255,${0.18*s})`;
+            ctx.fillRect(sx, sy + sh*0.28, sw, sh*0.04);
+            // Legs (4 legs)
+            ctx.fillStyle = `rgb(${Math.round(120*s)},${Math.round(80*s)},${Math.round(40*s)})`;
+            const legW = Math.max(2, sw * 0.07);
+            const legH = sh * 0.60;
+            const legY = sy + sh * 0.40;
+            ctx.fillRect(sx + sw*0.05,            legY, legW, legH);
+            ctx.fillRect(sx + sw*0.88,            legY, legW, legH);
+            ctx.fillRect(sx + sw*0.05 + legW*0.5, legY + legH*0.1, Math.max(1,legW*0.7), legH*0.9);
+            // Shadow under table
+            ctx.fillStyle = `rgba(0,0,0,${0.25*s})`;
+            ctx.fillRect(sx + sw*0.06, legY + legH*0.7, sw*0.88, legH*0.25);
+        }
+        else if (type === 'chair') {
+            // Seat
+            ctx.fillStyle = `rgb(${Math.round(140*s)},${Math.round(90*s)},${Math.round(50*s)})`;
+            ctx.fillRect(sx + sw*0.08, sy + sh*0.42, sw*0.84, sh*0.10);
+            // Back rest
+            ctx.fillStyle = `rgb(${Math.round(130*s)},${Math.round(85*s)},${Math.round(45*s)})`;
+            ctx.fillRect(sx + sw*0.18, sy + sh*0.05, sw*0.64, sh*0.38);
+            // Back slats
+            ctx.fillStyle = `rgb(${Math.round(100*s)},${Math.round(65*s)},${Math.round(35*s)})`;
+            for (let i = 0; i < 3; i++) {
+                ctx.fillRect(sx + sw*(0.25 + i*0.18), sy + sh*0.08, sw*0.08, sh*0.32);
+            }
+            // Legs
+            ctx.fillStyle = `rgb(${Math.round(110*s)},${Math.round(70*s)},${Math.round(35*s)})`;
+            const legW2 = Math.max(2, sw*0.10);
+            ctx.fillRect(sx + sw*0.10, sy + sh*0.52, legW2, sh*0.46);
+            ctx.fillRect(sx + sw*0.80, sy + sh*0.52, legW2, sh*0.46);
+        }
+        else if (type === 'desk') {
+            // Desk surface
+            ctx.fillStyle = `rgb(${Math.round(175*s)},${Math.round(140*s)},${Math.round(90*s)})`;
+            ctx.fillRect(sx, sy + sh*0.22, sw, sh*0.10);
+            // Desk top highlight
+            ctx.fillStyle = `rgba(255,255,255,${0.15*s})`;
+            ctx.fillRect(sx, sy + sh*0.22, sw, sh*0.035);
+            // Cabinet body below
+            ctx.fillStyle = `rgb(${Math.round(155*s)},${Math.round(120*s)},${Math.round(75*s)})`;
+            ctx.fillRect(sx + sw*0.04, sy + sh*0.32, sw*0.92, sh*0.66);
+            // Drawer lines
+            ctx.fillStyle = `rgb(${Math.round(120*s)},${Math.round(90*s)},${Math.round(55*s)})`;
+            ctx.fillRect(sx + sw*0.04, sy + sh*0.54, sw*0.92, Math.max(1,sh*0.02));
+            ctx.fillRect(sx + sw*0.04, sy + sh*0.74, sw*0.92, Math.max(1,sh*0.02));
+            // Drawer handles
+            ctx.fillStyle = `rgb(${Math.round(200*s)},${Math.round(180*s)},${Math.round(100*s)})`;
+            ctx.fillRect(sx + sw*0.42, sy + sh*0.42, sw*0.16, Math.max(1,sh*0.025));
+            ctx.fillRect(sx + sw*0.42, sy + sh*0.62, sw*0.16, Math.max(1,sh*0.025));
+            ctx.fillRect(sx + sw*0.42, sy + sh*0.82, sw*0.16, Math.max(1,sh*0.025));
+        }
+        else if (type === 'lamp') {
+            // Pole
+            ctx.fillStyle = `rgb(${Math.round(80*s)},${Math.round(70*s)},${Math.round(60*s)})`;
+            ctx.fillRect(sx + sw*0.35, sy + sh*0.2, sw*0.30, sh*0.75);
+            // Lamp shade
+            ctx.fillStyle = `rgb(${Math.round(220*s)},${Math.round(200*s)},${Math.round(140*s)})`;
+            ctx.beginPath();
+            ctx.moveTo(sx + sw*0.05, sy + sh*0.20);
+            ctx.lineTo(sx + sw*0.95, sy + sh*0.20);
+            ctx.lineTo(sx + sw*0.70, sy + sh*0.38);
+            ctx.lineTo(sx + sw*0.30, sy + sh*0.38);
+            ctx.closePath();
+            ctx.fill();
+            // Glow at bottom of shade
+            ctx.fillStyle = `rgba(255,240,180,${0.5*s})`;
+            ctx.fillRect(sx + sw*0.28, sy + sh*0.36, sw*0.44, sh*0.04);
+            // Base
+            ctx.fillStyle = `rgb(${Math.round(60*s)},${Math.round(55*s)},${Math.round(45*s)})`;
+            ctx.fillRect(sx + sw*0.15, sy + sh*0.92, sw*0.70, sh*0.08);
+        }
+    }
+
+    // ---- DOOR LOGIC --------------------------------------------------------
+    function updateDoors() {
+        const AUTO_OPEN_DIST = 90; // pixels
+        const AUTO_CLOSE_DELAY = 180; // 3s at 60fps
+        for (const d of DOORS) {
+            const wx = (d.tx + 0.5) * CS, wy = (d.ty + 0.5) * CS;
+            const dx = player.x - wx, dy = player.y - wy;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < AUTO_OPEN_DIST) {
+                d.open = true;
+                d.timer = AUTO_CLOSE_DELAY;
+            } else if (d.open) {
+                d.timer--;
+                if (d.timer <= 0) d.open = false;
+            }
+            // Animate offset: lerp toward 1 when open, 0 when closed
+            const target = d.open ? 1 : 0;
+            d.offset = d.offset * 0.85 + target * 0.15;
+        }
+    }
+
+    // ---- DOOR RENDERING ----------------------------------------------------
+    function drawDoors() {
+        const sorted = [...DOORS].sort((a, b) => {
+            const da = (a.tx*CS - player.x)**2 + (a.ty*CS - player.y)**2;
+            const db = (b.tx*CS - player.x)**2 + (b.ty*CS - player.y)**2;
+            return db - da;
+        });
+        for (const d of sorted) {
+            if (d.offset > 0.97) continue; // fully open, skip
+            const wx = (d.tx + 0.5) * CS, wy = (d.ty + 0.5) * CS;
+            const dx = wx - player.x, dy = wy - player.y;
+            const distWorld = Math.sqrt(dx*dx + dy*dy);
+            if (distWorld < 1) continue;
+
+            const angle = Math.atan2(dy, dx);
+            let angleDiff = angle - player.angle;
+            while (angleDiff >  Math.PI) angleDiff -= 2*Math.PI;
+            while (angleDiff < -Math.PI) angleDiff += 2*Math.PI;
+            if (Math.abs(angleDiff) > HALF_FOV + 0.3) continue;
+
+            const screenX = Math.round(CW / 2 + (angleDiff / FOV) * CW);
+            const corrDist = (distWorld / CS) * Math.cos(angleDiff);
+            if (corrDist <= 0) continue;
+
+            const zCheck = Math.max(0, Math.min(CW - 1, screenX));
+            if (corrDist >= zBuffer[zCheck]) continue;
+
+            const wallH = (CH / corrDist) * 1.5;
+            const horizonY = CH / 2 + player.bobOffset + player.pitch * CH + player.heightOffset * CH;
+            const floorY = Math.round(horizonY + wallH * 0.5);
+
+            // Door fills full wall height, slides sideways as offset increases
+            const fullH = Math.round(wallH);
+            const fullW = Math.round((CH / corrDist) * 1.2);
+            const visibleW = Math.round(fullW * (1 - d.offset));
+            if (visibleW < 1) continue;
+            const sy = Math.round(floorY - fullH);
+            const sx = Math.round(screenX - fullW / 2);
+
+            const shade = Math.max(0.1, 1.0 - corrDist * 0.015);
+
+            ctx.save();
+            ctx.beginPath();
+            for (let col = 0; col < visibleW; col++) {
+                const px = sx + col;
+                if (px >= 0 && px < CW && corrDist < zBuffer[px]) ctx.rect(px, 0, 1, CH);
+            }
+            ctx.clip();
+            // Door panel: dark grey with handle
+            ctx.fillStyle = `rgb(${Math.round(100*shade)},${Math.round(85*shade)},${Math.round(70*shade)})`;
+            ctx.fillRect(sx, Math.max(0,sy), visibleW, Math.min(fullH, CH));
+            // Door frame highlight
+            ctx.fillStyle = `rgba(255,255,255,${0.12*shade})`;
+            ctx.fillRect(sx, Math.max(0,sy), Math.max(2,visibleW*0.04), Math.min(fullH, CH));
+            // Handle (only visible when close to closed)
+            if (d.offset < 0.5 && corrDist < 6) {
+                const hx = sx + visibleW * 0.7;
+                const hy = sy + fullH * 0.48;
+                ctx.fillStyle = `rgb(${Math.round(210*shade)},${Math.round(180*shade)},${Math.round(100*shade)})`;
+                ctx.fillRect(hx, hy, Math.max(2, visibleW*0.08), Math.max(2, fullH*0.06));
+            }
+            ctx.restore();
+        }
+    }
+
     // ---- PICKUP RENDERING --------------------------------------------------
     const PICKUP_COLORS = {
         pp7:     { main: '#c8c8c8', glow: 'rgba(220,220,220,' },
@@ -1713,6 +1983,7 @@
                 if (e.dyingTimer <= 0) {
                     e.active = false;
                     corpses.push({ x: e.x, y: e.y, type: e.type });
+                    if (corpses.length > 20) corpses.shift();
                     pickups.push({ type: 'gun', gun: e.weaponType || 'pp7', x: e.x, y: e.y, active: true, timer: 0 });
                 }
                 continue;
@@ -2081,6 +2352,7 @@
         updatePlayer();
         updateEnemies();
         updateGrenades();
+        updateDoors();
 
         // Gun timers
         if (gun.recoil > 0) gun.recoil--;
@@ -2106,7 +2378,9 @@
         updateObjectives();
         drawObjectiveHUD();
         drawCorpses();
+        drawDoors();
         drawEnemies();
+        drawFurniture();
         drawPickups();
         drawGrenades();
         drawBulletTrails();
@@ -2170,6 +2444,7 @@
         FOV = Math.PI / 2.5;
         HALF_FOV = FOV / 2;
         OBJECTIVES[0].done = false;
+        for (const d of DOORS) { d.open = false; d.offset = 0; d.timer = 0; }
         initPickups();
         spawnEnemies();
         gameRunning = true;
