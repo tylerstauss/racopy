@@ -167,6 +167,21 @@ h1 {
 }
 .game-btn.red:hover .arrow { color: #cc0000; }
 
+/* Blue accent for kart */
+.game-btn.blue {
+  border-color: #001a3d;
+  background: linear-gradient(135deg, #00091a, #00050d);
+}
+.game-btn.blue .game-tag { color: #003366; }
+.game-btn.blue .game-title { color: #33aaff; text-shadow: 0 0 12px #0088ff66; }
+.game-btn.blue .game-desc { color: #334455; }
+.game-btn.blue .arrow { color: #001a3d; }
+.game-btn.blue:hover {
+  border-color: #0088ff;
+  box-shadow: 0 0 20px rgba(0,136,255,0.25), inset 0 0 20px rgba(0,136,255,0.05);
+}
+.game-btn.blue:hover .arrow { color: #33aaff; }
+
 /* Gold accent for loderunner */
 .game-btn.gold {
   border-color: #3d3000;
@@ -216,6 +231,13 @@ footer {
       <div class="game-tag">Platformer · Puzzle</div>
       <div class="game-title">Lode Runner II</div>
       <div class="game-desc">Alternate build — slower NPCs, improved collision</div>
+      <span class="arrow">▶</span>
+    </a>
+
+    <a class="game-btn blue" href="/kart/dist/index.html">
+      <div class="game-tag">Racing · 3D</div>
+      <div class="game-title">Velocity Vortex</div>
+      <div class="game-desc">N64-style kart racing — drift for Mini-Turbos and hit the apex</div>
       <span class="arrow">▶</span>
     </a>
 
