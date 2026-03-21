@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>N64 · GOLDENROD · LIBRARY MAP</title>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -173,11 +174,21 @@
     <div id="lobby">
         <div class="lobby-card">
             <div class="title">LIBRARY STACKS</div>
-            <div style="color:#8bc34a; margin:15px;">Goldeneye-style library infiltration</div>
-            <div style="color:#aaa; font-size:13px; margin:15px;">W/S Forward·Back &nbsp;·&nbsp; A/D Strafe &nbsp;·&nbsp; ←→ Turn</div>
-            <div style="color:#aaa; font-size:13px; margin-bottom:8px;">Space / Click to Fire &nbsp;·&nbsp; Mouse Look &nbsp;·&nbsp; 1-4 Switch Weapon</div>
-            <div style="color:#aaa; font-size:13px; margin-bottom:20px;">C=Crouch &nbsp;·&nbsp; G=Grenade &nbsp;·&nbsp; RMB=ADS &nbsp;·&nbsp; Esc=Pause</div>
-            <button onclick="startGame()" style="font-size:20px; padding:10px 30px;">ENTER</button>
+            <div style="color:#8bc34a; margin:10px 0;">Goldeneye-style FPS &mdash; solo or online co-op</div>
+            <div style="color:#aaa; font-size:12px; margin-bottom:16px;">WASD/Arrows move &nbsp;·&nbsp; Space/Click fire &nbsp;·&nbsp; Mouse look &nbsp;·&nbsp; 1-4 guns &nbsp;·&nbsp; C crouch &nbsp;·&nbsp; G grenade</div>
+            <div id="lobbyMain" style="display:flex; flex-direction:column; gap:12px; align-items:center;">
+                <button onclick="soloGame()" style="font-size:18px; padding:8px 28px;">SOLO vs AI</button>
+                <div style="color:#888; font-size:12px;">— or multiplayer (2–4 players) —</div>
+                <button onclick="hostGame()" style="font-size:16px; padding:7px 22px;">HOST GAME</button>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <input id="joinCode" placeholder="Room code" style="font-family:monospace; font-size:15px; padding:6px 10px; background:#1a2a1a; border:2px solid #4a7a4a; color:#cfc; border-radius:8px; width:160px;">
+                    <button onclick="joinGame()" style="font-size:15px; padding:6px 16px;">JOIN</button>
+                </div>
+            </div>
+            <div id="lobbyWait" style="display:none; text-align:center;">
+                <div id="lobbyStatus" style="color:#8bc34a; font-size:14px; margin:16px 0; line-height:1.8;"></div>
+                <button id="startHostBtn" onclick="startHostedGame()" style="display:none; font-size:18px; padding:8px 24px;">START GAME</button>
+            </div>
         </div>
     </div>
 
@@ -325,6 +336,11 @@
     const CW = canvas.width;   // 800
     const CH = canvas.height;  // 500
 
+    // Offscreen canvas for raycaster (putImageData ignores ctx transform)
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = CW; offCanvas.height = CH;
+    const offCtx = offCanvas.getContext('2d');
+
     // ---- MAP ---------------------------------------------------------------
     const MAP_WIDTH  = 60;
     const MAP_HEIGHT = 47;
@@ -397,6 +413,66 @@
     let damageFlash = 0;
     let regenTimer = 0;
     let gun = { recoil: 0, muzzleFlash: 0, cooldown: 0 };
+
+    // ---- MULTIPLAYER STATE -------------------------------------------------
+    const INP = { FWD:1, BACK:2, TURNL:4, TURNR:8, FIRE:16, CROUCH:32, STRAFE_L:64, STRAFE_R:128 };
+    let MP = { mode:'solo', myIdx:0, peer:null, hostConn:null, clientConns:[], stateTimer:0 };
+    let humanPlayers = [];  // array of player state objects
+
+    const PLAYER_SPAWNS = [
+        { x:30*64, y:42*64, a:-Math.PI/2 },
+        { x:30*64, y: 3*64, a: Math.PI/2 },
+        { x: 3*64, y:22*64, a: 0         },
+        { x:56*64, y:22*64, a: Math.PI   },
+    ];
+
+    function makePlayer(idx) {
+        const sp = PLAYER_SPAWNS[idx % 4];
+        return {
+            x: sp.x, y: sp.y, angle: sp.a,
+            pitch: 0, health: 100,
+            guns: { pp7:{has:true,ammo:24}, kf7:{has:false,ammo:0}, shotgun:{has:false,ammo:0}, sniper:{has:false,ammo:0} },
+            currentGun: 'pp7',
+            bobPhase:0, bobOffset:0, crouching:false, heightOffset:0, aiming:false, grenades:2,
+            gun: { recoil:0, muzzleFlash:0, cooldown:0 },
+            damageFlash:0, regenTimer:0, shakeTimer:0, shakeIntensity:0,
+            fov: Math.PI/2.5,
+            bulletTrails: [],
+            _inputBits:0, _inputAngle:sp.a, _inputPitch:0,
+            _fireOnce:false, _grenThrown:false,
+            kills:0, deaths:0,
+        };
+    }
+
+    function throwGrenade(pl) {
+        pl = pl || player;
+        if (pl.grenades <= 0) return;
+        pl.grenades--;
+        grenades.push({ x:pl.x, y:pl.y, vx:Math.cos(pl.angle)*5, vy:Math.sin(pl.angle)*5, fuse:180, active:true });
+    }
+
+    function getNearestAlivePlayer(ex, ey) {
+        let nearest = player, nearestD2 = Infinity;
+        for (const pl of humanPlayers) {
+            if (pl.health <= 0) continue;
+            const d2 = (pl.x-ex)**2 + (pl.y-ey)**2;
+            if (d2 < nearestD2) { nearestD2 = d2; nearest = pl; }
+        }
+        return nearest;
+    }
+
+    function getInputBits() {
+        let b = 0;
+        if (keys['ArrowUp']   || keys['KeyW']) b |= INP.FWD;
+        if (keys['ArrowDown'] || keys['KeyS']) b |= INP.BACK;
+        if (keys['ArrowLeft'])                 b |= INP.TURNL;
+        if (keys['ArrowRight'])                b |= INP.TURNR;
+        if (keys['KeyA'])                      b |= INP.STRAFE_L;
+        if (keys['KeyD'])                      b |= INP.STRAFE_R;
+        if (keys['Space'] || keys['ControlLeft'] || keys['ControlRight']) b |= INP.FIRE;
+        if (keys['KeyC'])                      b |= INP.CROUCH;
+        return b;
+    }
 
     let player = {
         x: 30 * CS,
@@ -530,9 +606,6 @@
         pauseMenu.style.display = 'none';
         document.getElementById('lobby').style.display = 'flex';
     }
-    window.resumeGame = resumeGame;
-    window.backToLobby = backToLobby;
-
     // ---- GUN DEFINITIONS ---------------------------------------------------
     const GUN_DEFS = {
         pp7:     { name: 'PP7',        damage: 50,  cooldown: 12, magSize: 24, spread: 0.18 },
@@ -646,15 +719,16 @@
         if (!document.pointerLockElement) {
             canvas.requestPointerLock();
         } else if (gameRunning) {
-            shoot();
+            shoot(player);
         }
     });
 
     document.addEventListener('mousemove', e => {
         if (document.pointerLockElement === canvas && gameRunning) {
-            player.angle += e.movementX * 0.0025;
-            player.pitch -= e.movementY * 0.0025;
-            player.pitch = Math.max(-0.4, Math.min(0.4, player.pitch));
+            const lp = humanPlayers[MP.myIdx] || player;
+            lp.angle += e.movementX * 0.0025;
+            lp.pitch -= e.movementY * 0.0025;
+            lp.pitch = Math.max(-0.4, Math.min(0.4, lp.pitch));
         }
     });
 
@@ -666,21 +740,14 @@
     window.addEventListener('keydown', e => {
         keys[e.code] = true;
         if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
-        if ((e.code === 'ControlLeft' || e.code === 'ControlRight') && gameRunning) shoot();
-        if (e.code === 'Space' && gameRunning) shoot();
+        if ((e.code === 'ControlLeft' || e.code === 'ControlRight') && gameRunning) shoot(player);
+        if (e.code === 'Space' && gameRunning) shoot(player);
         if (e.code === 'Digit1') switchGun('pp7');
         if (e.code === 'Digit2') switchGun('kf7');
         if (e.code === 'Digit3') switchGun('shotgun');
         if (e.code === 'Digit4') switchGun('sniper');
         if (e.code === 'KeyC' && gameRunning) player.crouching = true;
-        if (e.code === 'KeyG' && gameRunning && player.grenades > 0) {
-            player.grenades--;
-            grenades.push({
-                x: player.x, y: player.y,
-                vx: Math.cos(player.angle) * 5, vy: Math.sin(player.angle) * 5,
-                fuse: 180, active: true
-            });
-        }
+        if (e.code === 'KeyG' && gameRunning) throwGrenade(player);
         if (e.code === 'Escape') {
             if (gameRunning) { pauseGame(); }
             else if (paused) { resumeGame(); }
@@ -693,6 +760,9 @@
         keys[e.code] = false;
         if (e.code === 'KeyC') player.crouching = false;
     });
+
+    window.resumeGame = resumeGame;
+    window.backToLobby = backToLobby;
 
     // ---- RAYCASTER ---------------------------------------------------------
     let FOV = Math.PI / 2.5;
@@ -759,7 +829,7 @@
         }
 
         // Single-pass pixel fill
-        const imgData = ctx.createImageData(CW, CH);
+        const imgData = offCtx.createImageData(CW, CH);
         const data = imgData.data;
         const rdLX = Math.cos(player.angle - HALF_FOV), rdLY = Math.sin(player.angle - HALF_FOV);
         const rdRX = Math.cos(player.angle + HALF_FOV), rdRY = Math.sin(player.angle + HALF_FOV);
@@ -833,7 +903,7 @@
             }
         }
 
-        ctx.putImageData(imgData, 0, 0);
+        offCtx.putImageData(imgData, 0, 0);
     }
 
     // ---- ENEMY RENDERING ---------------------------------------------------
@@ -895,6 +965,60 @@
             ctx.clip();
 
             drawHumanFigure(sx, sy, spriteW, spriteH, shade, e.type, e.animTick || 0, e.state, e.state === 'shoot' && (e.shootTimer || 0) < 5);
+            ctx.restore();
+        }
+    }
+
+    // ---- OTHER PLAYERS RENDERING -------------------------------------------
+    function drawOtherPlayers() {
+        if (humanPlayers.length <= 1) return;
+        const myIdx = MP.myIdx;
+        const others = humanPlayers
+            .map((pl, i) => ({ pl, i }))
+            .filter(({ pl, i }) => i !== myIdx && pl.health > 0)
+            .sort((a, b) => {
+                const da = (a.pl.x-player.x)**2 + (a.pl.y-player.y)**2;
+                const db = (b.pl.x-player.x)**2 + (b.pl.y-player.y)**2;
+                return db - da;
+            });
+        for (const { pl, i } of others) {
+            const dx = pl.x - player.x, dy = pl.y - player.y;
+            const distWorld = Math.sqrt(dx*dx + dy*dy);
+            if (distWorld < 1) continue;
+            const oAngle = Math.atan2(dy, dx);
+            let angleDiff = oAngle - player.angle;
+            while (angleDiff >  Math.PI) angleDiff -= 2*Math.PI;
+            while (angleDiff < -Math.PI) angleDiff += 2*Math.PI;
+            if (Math.abs(angleDiff) > HALF_FOV + 0.25) continue;
+            const screenX = Math.round(CW/2 + (angleDiff/FOV)*CW);
+            const corrDist = (distWorld/CS) * Math.cos(angleDiff);
+            if (corrDist <= 0) continue;
+            const spriteH = Math.min(CH*0.66, (CH/corrDist)*0.9);
+            const spriteW = Math.round(spriteH*0.55);
+            const sx = Math.round(screenX - spriteW/2);
+            const floorY = Math.round(CH/2 + player.bobOffset + player.pitch*CH + player.heightOffset*CH + (CH/corrDist)*0.75);
+            const sy = floorY - spriteH;
+            const shade = Math.max(0.15, Math.min(1, 1.2 - corrDist*0.016));
+            let visible = false;
+            for (let check = 0; check <= 6; check++) {
+                const col = Math.round(sx + spriteW*(check/6));
+                if (col >= 0 && col < CW && corrDist < zBuffer[col]) { visible = true; break; }
+            }
+            if (!visible) continue;
+            ctx.save();
+            ctx.beginPath();
+            for (let col = 0; col < spriteW; col++) {
+                const px = sx + col;
+                if (px >= 0 && px < CW && corrDist < zBuffer[px]) ctx.rect(px, 0, 1, CH);
+            }
+            ctx.clip();
+            drawHumanFigure(sx, sy, spriteW, spriteH, shade, i % 2, pl.bobPhase||0, 'patrol', pl.gun&&pl.gun.muzzleFlash>0);
+            if (spriteH > 25) {
+                ctx.fillStyle = `rgba(255,255,80,${Math.min(1,shade)})`;
+                ctx.font = `bold ${Math.max(9,Math.round(spriteH*0.12))}px monospace`;
+                ctx.textAlign = 'center';
+                ctx.fillText('P'+(i+1), screenX, sy - 3);
+            }
             ctx.restore();
         }
     }
@@ -1786,12 +1910,16 @@
 
     // ---- DOOR LOGIC --------------------------------------------------------
     function updateDoors() {
-        const AUTO_OPEN_DIST = 90; // pixels
-        const AUTO_CLOSE_DELAY = 180; // 3s at 60fps
+        const AUTO_OPEN_DIST = 90;
+        const AUTO_CLOSE_DELAY = 180;
+        const allPlayers = humanPlayers.length > 0 ? humanPlayers : [player];
         for (const d of DOORS) {
             const wx = (d.tx + 0.5) * CS, wy = (d.ty + 0.5) * CS;
-            const dx = player.x - wx, dy = player.y - wy;
-            const dist = Math.sqrt(dx*dx + dy*dy);
+            let dist = Infinity;
+            for (const pl of allPlayers) {
+                const dd = Math.sqrt((pl.x-wx)**2 + (pl.y-wy)**2);
+                if (dd < dist) dist = dd;
+            }
             if (dist < AUTO_OPEN_DIST) {
                 d.open = true;
                 d.timer = AUTO_CLOSE_DELAY;
@@ -1936,49 +2064,75 @@
     }
 
     // ---- SHOOT -------------------------------------------------------------
-    function shoot() {
+    function shoot(pl) {
+        pl = pl || player;
         if (!gameRunning) return;
-        if (gun.cooldown > 0) return;
-        const gd = GUN_DEFS[player.currentGun];
-        if (player.guns[player.currentGun].ammo <= 0) return;
+        const gs = pl.gun;
+        if (gs.cooldown > 0) return;
+        const gd = GUN_DEFS[pl.currentGun];
+        if (pl.guns[pl.currentGun].ammo <= 0) return;
 
-        player.guns[player.currentGun].ammo--;
-        gun.recoil = 15;
-        gun.muzzleFlash = 3;
-        gun.cooldown = gd.cooldown;
-        playShot(player.currentGun);
-        startShake(2, 6);
+        pl.guns[pl.currentGun].ammo--;
+        gs.recoil = 15;
+        gs.muzzleFlash = 3;
+        gs.cooldown = gd.cooldown;
+        playShot(pl.currentGun);
+        pl.shakeTimer = Math.max(pl.shakeTimer||0, 6);
+        pl.shakeIntensity = Math.max(pl.shakeIntensity||0, 2);
 
-        // Bullet tracer from muzzle toward crosshair
-        const muzzleX = 510;
-        const muzzleY = CH - 30 - 84 - 38 - 38;
-        bulletTrails.push({ age: 7, x1: muzzleX, y1: muzzleY, x2: CW / 2, y2: CH / 2 });
+        // Bullet tracer (only show for local player)
+        if (pl === player) {
+            const muzzleX = 510;
+            const muzzleY = CH - 30 - 84 - 38 - 38;
+            (pl.bulletTrails||bulletTrails).push({ age: 7, x1: muzzleX, y1: muzzleY, x2: CW/2, y2: CH/2 });
+        }
 
-        const adsSpreadMult = player.aiming ? 0.4 : 1.0;
-        // Shotgun fires 3 pellets; other guns fire once
-        const pellets = player.currentGun === 'shotgun' ? 3 : 1;
+        const adsSpreadMult = pl.aiming ? 0.4 : 1.0;
+        const pellets = pl.currentGun === 'shotgun' ? 3 : 1;
         for (let p = 0; p < pellets; p++) {
             const spread = gd.spread * adsSpreadMult;
             const offset = pellets > 1 ? (p - 1) * (spread / 2) : 0;
-            const aimAngle = player.angle + offset;
+            const aimAngle = pl.angle + offset;
 
             let closest = null, closestDist = Infinity;
+            // Check AI enemies
             for (const e of enemies) {
                 if (!e.active || e.state === 'dying') continue;
-                const ex = e.x - player.x, ey = e.y - player.y;
+                const ex = e.x - pl.x, ey = e.y - pl.y;
                 const dist = Math.sqrt(ex*ex + ey*ey);
                 const eAngle = Math.atan2(ey, ex);
                 let ad = eAngle - aimAngle;
                 while (ad >  Math.PI) ad -= 2*Math.PI;
                 while (ad < -Math.PI) ad += 2*Math.PI;
-                if (Math.abs(ad) < spread && dist < closestDist && hasLOS(player.x, player.y, e.x, e.y)) {
+                if (Math.abs(ad) < spread && dist < closestDist && hasLOS(pl.x, pl.y, e.x, e.y)) {
                     closest = e; closestDist = dist;
+                }
+            }
+            // Check other human players (PvP)
+            for (const other of humanPlayers) {
+                if (other === pl || other.health <= 0) continue;
+                const ox = other.x - pl.x, oy = other.y - pl.y;
+                const dist = Math.sqrt(ox*ox + oy*oy);
+                const oAngle = Math.atan2(oy, ox);
+                let ad = oAngle - aimAngle;
+                while (ad >  Math.PI) ad -= 2*Math.PI;
+                while (ad < -Math.PI) ad += 2*Math.PI;
+                if (Math.abs(ad) < spread && dist < closestDist && hasLOS(pl.x, pl.y, other.x, other.y)) {
+                    let dmg = gd.damage;
+                    if (G_cheats.licence) dmg = 1000;
+                    other.health = Math.max(0, other.health - dmg);
+                    other.damageFlash = (other.damageFlash||0) + 8;
+                    other.regenTimer = 0;
+                    playHit();
+                    pl.kills = (pl.kills||0) + 1;
+                    closest = null; // consumed by PvP hit
+                    break;
                 }
             }
             if (closest) {
                 let dmg = gd.damage;
                 if (G_cheats.licence) dmg = 1000;
-                if (player.currentGun === 'shotgun') {
+                if (pl.currentGun === 'shotgun') {
                     dmg = Math.max(15, dmg * Math.max(0.2, 1 - closestDist / (CS * 8)));
                 }
                 closest.health -= dmg;
@@ -1988,7 +2142,7 @@
                 } else {
                     closest.state = 'hit';
                     closest.hitTimer = 10;
-                    closest.hitDir = Math.atan2(closest.y - player.y, closest.x - player.x);
+                    closest.hitDir = Math.atan2(closest.y - pl.y, closest.x - pl.x);
                 }
             }
         }
@@ -2043,9 +2197,10 @@
                 continue;
             }
 
-            const dx = player.x - e.x, dy = player.y - e.y;
+            const tgt = getNearestAlivePlayer(e.x, e.y);
+            const dx = tgt.x - e.x, dy = tgt.y - e.y;
             const dist = Math.sqrt(dx*dx + dy*dy);
-            const los = dist < LOSE_DIST && hasLOS(e.x, e.y, player.x, player.y);
+            const los = dist < LOSE_DIST && hasLOS(e.x, e.y, tgt.x, tgt.y);
 
             if (e.state === 'patrol') {
                 if (dist < DETECT_DIST && los) {
@@ -2073,13 +2228,13 @@
                     e.alertTime = (e.alertTime || 0) + 1;
                     if (e.alertTime > 180) { e.state = 'patrol'; e.alertTime = 0; }
                     // Keep moving toward last known position
-                    moveToward(e, player.x, player.y, PATROL_SPEED);
+                    moveToward(e, tgt.x, tgt.y, PATROL_SPEED);
                 } else {
                     e.alertTime = 0;
                     if (dist <= SHOOT_DIST) {
                         e.state = 'shoot';
                     } else {
-                        moveToward(e, player.x, player.y, CHASE_SPEED);
+                        moveToward(e, tgt.x, tgt.y, CHASE_SPEED);
                     }
                 }
             } else if (e.state === 'shoot') {
@@ -2097,19 +2252,17 @@
                     e.shootTimer = (e.shootTimer || 0) + 1;
                     if (e.shootTimer >= 75) { // ~1.25s at 60fps
                         e.shootTimer = 0;
-                        if (gameRunning) {
-                            if (!G_cheats.invincible) {
-                                player.health -= 10;
-                                damageFlash = 8;
-                                regenTimer = 0;
-                                playHit();
-                            }
+                        if (gameRunning && !G_cheats.invincible) {
+                            tgt.health -= 10;
+                            tgt.damageFlash = (tgt.damageFlash||0) + 8;
+                            tgt.regenTimer = 0;
+                            playHit();
                         }
                     }
                 }
                 // If player moves away, give chase again
                 if (dist > SHOOT_DIST * 1.3 && los) {
-                    moveToward(e, player.x, player.y, CHASE_SPEED);
+                    moveToward(e, tgt.x, tgt.y, CHASE_SPEED);
                 }
             }
         }
@@ -2158,6 +2311,16 @@
                         else { e.state = 'hit'; e.hitTimer = 10; }
                     }
                 }
+                for (const pl of humanPlayers) {
+                    if (pl.health <= 0 || G_cheats.invincible) continue;
+                    const pdx = pl.x - g.x, pdy = pl.y - g.y;
+                    const dist = Math.sqrt(pdx*pdx + pdy*pdy);
+                    if (dist < GRENADE_RADIUS) {
+                        const dmg = Math.round(80 * (1 - dist / GRENADE_RADIUS));
+                        pl.health = Math.max(0, pl.health - dmg);
+                        pl.damageFlash = (pl.damageFlash||0) + 12;
+                    }
+                }
                 startShake(6, 20);
                 g.active = false;
             }
@@ -2166,28 +2329,29 @@
 
     // ---- PICKUP LOGIC ------------------------------------------------------
     function updatePickups() {
+        const allPlayers = humanPlayers.length > 0 ? humanPlayers : [player];
         for (const p of pickups) {
             if (!p.active) {
                 if (--p.timer <= 0) p.active = true;
                 continue;
             }
-            const dx = p.x - player.x, dy = p.y - player.y;
-            if (dx*dx + dy*dy > 1024) continue; // 32px radius
-            const gd = GUN_DEFS[p.gun];
-            if (p.type === 'gun') {
-                player.guns[p.gun].has = true;
-                player.guns[p.gun].ammo = Math.min(
-                    player.guns[p.gun].ammo + gd.magSize, gd.magSize * 2
-                );
-                if (player.currentGun === 'pp7') player.currentGun = p.gun;
-            } else {
-                player.guns[p.gun].ammo = Math.min(
-                    player.guns[p.gun].ammo + Math.ceil(gd.magSize * 0.5), gd.magSize * 3
-                );
+            for (const pl of allPlayers) {
+                if (pl.health <= 0) continue;
+                const dx = p.x - pl.x, dy = p.y - pl.y;
+                if (dx*dx + dy*dy > 1024) continue;
+                const gd = GUN_DEFS[p.gun];
+                if (p.type === 'gun') {
+                    pl.guns[p.gun].has = true;
+                    pl.guns[p.gun].ammo = Math.min(pl.guns[p.gun].ammo + gd.magSize, gd.magSize * 2);
+                    if (pl.currentGun === 'pp7') pl.currentGun = p.gun;
+                } else {
+                    pl.guns[p.gun].ammo = Math.min(pl.guns[p.gun].ammo + Math.ceil(gd.magSize * 0.5), gd.magSize * 3);
+                }
+                p.active = false;
+                p.timer = p.type === 'gun' ? PICKUP_RESPAWN_GUN : PICKUP_RESPAWN_AMMO;
+                playPickup();
+                break;
             }
-            p.active = false;
-            p.timer = p.type === 'gun' ? PICKUP_RESPAWN_GUN : PICKUP_RESPAWN_AMMO;
-            playPickup();
         }
     }
 
@@ -2195,62 +2359,55 @@
     const SPEED = 2.5;
     const RADIUS = 10;
 
-    function updatePlayer() {
+    // inputBits: bitmask using INP constants (or 0 to use live keys for local player)
+    function updatePlayer(pl, inputBits) {
+        pl = pl || player;
+        if (inputBits === undefined) inputBits = getInputBits();
         let dx = 0, dy = 0;
 
-        // Arrow keys: left/right = turn, up/down = forward/back
-        if (keys['ArrowLeft'])  player.angle -= 0.04;
-        if (keys['ArrowRight']) player.angle += 0.04;
+        const fwd      = (inputBits & INP.FWD)      ? 1 : 0;
+        const back     = (inputBits & INP.BACK)     ? 1 : 0;
+        const turnL    = (inputBits & INP.TURNL)    ? 1 : 0;
+        const turnR    = (inputBits & INP.TURNR)    ? 1 : 0;
+        const strafeL  = (inputBits & INP.STRAFE_L) ? 1 : 0;
+        const strafeR  = (inputBits & INP.STRAFE_R) ? 1 : 0;
+        pl.crouching   = !!(inputBits & INP.CROUCH);
 
-        const fwd   = (keys['KeyW'] || keys['ArrowUp'])   ? 1 : 0;
-        const back  = (keys['KeyS'] || keys['ArrowDown'])  ? 1 : 0;
-        const left  = keys['KeyA'] ? 1 : 0;   // A = strafe left
-        const right = keys['KeyD'] ? 1 : 0;   // D = strafe right
+        if (turnL) pl.angle -= 0.04;
+        if (turnR) pl.angle += 0.04;
 
-        const speedMult = (player.crouching ? 0.6 : 1.0) * (G_cheats.turbo ? 3 : 1);
-        dx += Math.cos(player.angle) * (fwd - back) * SPEED * speedMult;
-        dy += Math.sin(player.angle) * (fwd - back) * SPEED * speedMult;
-        // Strafe (perpendicular)
-        dx += Math.cos(player.angle + Math.PI/2) * (right - left) * SPEED * speedMult;
-        dy += Math.sin(player.angle + Math.PI/2) * (right - left) * SPEED * speedMult;
+        const speedMult = (pl.crouching ? 0.6 : 1.0) * (G_cheats.turbo ? 3 : 1);
+        dx += Math.cos(pl.angle) * (fwd - back) * SPEED * speedMult;
+        dy += Math.sin(pl.angle) * (fwd - back) * SPEED * speedMult;
+        dx += Math.cos(pl.angle + Math.PI/2) * (strafeR - strafeL) * SPEED * speedMult;
+        dy += Math.sin(pl.angle + Math.PI/2) * (strafeR - strafeL) * SPEED * speedMult;
 
         const moving = dx !== 0 || dy !== 0;
+        if (moving) { pl.bobPhase += 0.12; pl.bobOffset = Math.sin(pl.bobPhase) * 4; }
+        else { pl.bobOffset *= 0.85; }
 
-        if (moving) {
-            player.bobPhase += 0.12;
-            player.bobOffset = Math.sin(player.bobPhase) * 4;
-        } else {
-            player.bobOffset *= 0.85;
-        }
+        const targetHeight = pl.crouching ? -0.35 : 0;
+        pl.heightOffset = pl.heightOffset * 0.85 + targetHeight * 0.15;
 
-        // Crouch height offset
-        const targetHeight = player.crouching ? -0.35 : 0;
-        player.heightOffset = player.heightOffset * 0.85 + targetHeight * 0.15;
-
-        // Collision: check X and Y separately with radius corners
         if (dx !== 0) {
-            const nx = player.x + dx;
-            const checkY = [player.y - RADIUS, player.y, player.y + RADIUS];
+            const nx = pl.x + dx;
+            const checkY = [pl.y - RADIUS, pl.y, pl.y + RADIUS];
             let canX = true;
             for (const cy of checkY) {
-                if (mapSolid(Math.floor((nx + Math.sign(dx)*RADIUS) / CS), Math.floor(cy / CS))) {
-                    canX = false; break;
-                }
+                if (mapSolid(Math.floor((nx + Math.sign(dx)*RADIUS) / CS), Math.floor(cy / CS))) { canX = false; break; }
             }
-            if (canX && furnitureSolid(nx, player.y)) canX = false;
-            if (canX) player.x = nx;
+            if (canX && furnitureSolid(nx, pl.y)) canX = false;
+            if (canX) pl.x = nx;
         }
         if (dy !== 0) {
-            const ny = player.y + dy;
-            const checkX = [player.x - RADIUS, player.x, player.x + RADIUS];
+            const ny = pl.y + dy;
+            const checkX = [pl.x - RADIUS, pl.x, pl.x + RADIUS];
             let canY = true;
             for (const cx of checkX) {
-                if (mapSolid(Math.floor(cx / CS), Math.floor((ny + Math.sign(dy)*RADIUS) / CS))) {
-                    canY = false; break;
-                }
+                if (mapSolid(Math.floor(cx / CS), Math.floor((ny + Math.sign(dy)*RADIUS) / CS))) { canY = false; break; }
             }
-            if (canY && furnitureSolid(player.x, ny)) canY = false;
-            if (canY) player.y = ny;
+            if (canY && furnitureSolid(pl.x, ny)) canY = false;
+            if (canY) pl.y = ny;
         }
     }
 
@@ -2338,6 +2495,8 @@
     // ---- WIN / LOSE --------------------------------------------------------
     function checkWinLose() {
         if (!gameRunning) return;
+        // Only host checks win/lose in MP (client sees state via sync)
+        if (MP.mode === 'client') return;
         if (player.health <= 0) {
             gameRunning = false;
             overlayTitle.textContent = 'MISSION FAILED';
@@ -2347,7 +2506,14 @@
         const alive = enemies.filter(e => e.active).length;
         if (alive === 0) {
             gameRunning = false;
-            overlayTitle.textContent = 'MISSION COMPLETE';
+            if (MP.mode === 'host' && humanPlayers.length > 1) {
+                // Show scoreboard
+                const sorted = [...humanPlayers].sort((a, b) => (b.kills||0) - (a.kills||0));
+                const lines = sorted.map((pl, i) => `P${humanPlayers.indexOf(pl)+1}: ${pl.kills||0} kills`).join(' &nbsp;|&nbsp; ');
+                overlayTitle.innerHTML = 'MISSION COMPLETE<br><span style="font-size:18px;">' + lines + '</span>';
+            } else {
+                overlayTitle.textContent = 'MISSION COMPLETE';
+            }
             overlayTitle.className = 'overlay-title win-title';
             overlay.classList.add('show');
         }
@@ -2401,40 +2567,67 @@
         ctx.restore();
     }
 
-    // ---- MAIN LOOP ---------------------------------------------------------
+    // ---- MAIN LOOP (solo + host) -------------------------------------------
     function loop(id) {
         if (!gameRunning || id !== loopId) return;
 
-        updatePlayer();
+        // Update local player (host idx=0 or solo)
+        const localBits = getInputBits();
+        updatePlayer(player, localBits);
+        if (localBits & INP.FIRE) shoot(player);
+
+        // Update remote players on host using their received input
+        if (MP.mode === 'host') {
+            for (let i = 1; i < humanPlayers.length; i++) {
+                const rpl = humanPlayers[i];
+                updatePlayer(rpl, rpl._inputBits || 0);
+                if (rpl._fireOnce) { shoot(rpl); rpl._fireOnce = false; }
+                if (rpl._grenThrown) { throwGrenade(rpl); rpl._grenThrown = false; }
+                const rpl_gs = rpl.gun;
+                if (rpl_gs.recoil > 0) rpl_gs.recoil--;
+                if (rpl_gs.muzzleFlash > 0) rpl_gs.muzzleFlash--;
+                if (rpl_gs.cooldown > 0) rpl_gs.cooldown--;
+                const rtgt = rpl.aiming ? (rpl.currentGun==='sniper' ? Math.PI/8 : Math.PI/4) : Math.PI/2.5;
+                rpl.fov = (rpl.fov||Math.PI/2.5)*0.85 + rtgt*0.15;
+            }
+        }
+
         updateEnemies();
         updateGrenades();
         updateDoors();
 
-        // Gun timers
+        // Gun timers for local player
+        gun = player.gun;
         if (gun.recoil > 0) gun.recoil--;
         if (gun.muzzleFlash > 0) gun.muzzleFlash--;
         if (gun.cooldown > 0) gun.cooldown--;
 
-        // ADS FOV update
-        const targetFOV = player.aiming
-            ? (player.currentGun === 'sniper' ? Math.PI/8 : Math.PI/4)
-            : Math.PI/2.5;
-        FOV = FOV * 0.85 + targetFOV * 0.15;
-        HALF_FOV = FOV / 2;
+        // ADS FOV
+        const targetFOV = player.aiming ? (player.currentGun==='sniper' ? Math.PI/8 : Math.PI/4) : Math.PI/2.5;
+        player.fov = (player.fov||FOV)*0.85 + targetFOV*0.15;
+        FOV = player.fov; HALF_FOV = FOV/2;
 
-        // Health regen: starts 3s after last hit, +1 HP every 30 frames, cap at 100
+        // Health regen
         if (player.health > 0 && player.health < 100) {
-            regenTimer++;
-            if (regenTimer > 180 && regenTimer % 30 === 0) {
+            player.regenTimer = (player.regenTimer||0) + 1;
+            if (player.regenTimer > 180 && player.regenTimer % 30 === 0)
                 player.health = Math.min(100, player.health + 1);
-            }
         }
 
+        // Sync per-player globals for rendering
+        damageFlash = player.damageFlash || 0;
+        shakeTimer = player.shakeTimer || 0;
+        shakeIntensity = player.shakeIntensity || 0;
+        bulletTrails = player.bulletTrails || [];
+        regenTimer = player.regenTimer || 0;
+
         render3D();
+        ctx.drawImage(offCanvas, 0, 0);
         updateObjectives();
         drawObjectiveHUD();
         drawCorpses();
         drawEnemies();
+        drawOtherPlayers();
         drawFurniture();
         drawPickups();
         drawGrenades();
@@ -2445,70 +2638,319 @@
         drawCrosshair();
         drawStatusHUD();
 
+        player.damageFlash = damageFlash;
+        player.shakeTimer = shakeTimer;
+        player.shakeIntensity = shakeIntensity;
+
         updatePickups();
         updateHUD();
         updateRadar();
         checkWinLose();
 
+        if (MP.mode === 'host') {
+            MP.stateTimer = (MP.stateTimer||0) + 1;
+            if (MP.stateTimer >= 3) { MP.stateTimer = 0; mpSendState(); }
+        }
+
         requestAnimationFrame(() => loop(id));
     }
 
+    // ---- CLIENT LOOP (no physics, render only) ----------------------------
+    function clientLoop(id) {
+        if (!gameRunning || id !== loopId) return;
+
+        const myPl = humanPlayers[MP.myIdx] || player;
+        player = myPl;
+
+        // Local prediction for own movement
+        const localBits = getInputBits();
+        updatePlayer(myPl, localBits);
+
+        // ADS FOV
+        const targetFOV = myPl.aiming ? (myPl.currentGun==='sniper' ? Math.PI/8 : Math.PI/4) : Math.PI/2.5;
+        myPl.fov = (myPl.fov||Math.PI/2.5)*0.85 + targetFOV*0.15;
+        FOV = myPl.fov; HALF_FOV = FOV/2;
+
+        // Gun timers
+        const mgs = myPl.gun;
+        if (mgs.recoil > 0) mgs.recoil--;
+        if (mgs.muzzleFlash > 0) mgs.muzzleFlash--;
+        if (mgs.cooldown > 0) mgs.cooldown--;
+
+        // Local health regen estimate
+        if (myPl.health > 0 && myPl.health < 100) {
+            myPl.regenTimer = (myPl.regenTimer||0) + 1;
+            if (myPl.regenTimer > 180 && myPl.regenTimer % 30 === 0)
+                myPl.health = Math.min(100, myPl.health + 1);
+        }
+
+        // Send input to host
+        mpSendInput(localBits);
+
+        // Sync globals for rendering
+        gun = myPl.gun;
+        damageFlash = myPl.damageFlash || 0;
+        shakeTimer = myPl.shakeTimer || 0;
+        shakeIntensity = myPl.shakeIntensity || 0;
+        bulletTrails = myPl.bulletTrails || [];
+
+        render3D();
+        ctx.drawImage(offCanvas, 0, 0);
+        updateObjectives();
+        drawObjectiveHUD();
+        drawCorpses();
+        drawEnemies();
+        drawOtherPlayers();
+        drawFurniture();
+        drawPickups();
+        drawGrenades();
+        drawBulletTrails();
+        drawWeapon();
+        if (myPl.aiming && myPl.currentGun === 'sniper') drawScopeOverlay();
+        drawDamageFlash();
+        drawCrosshair();
+        drawStatusHUD();
+
+        myPl.damageFlash = damageFlash;
+        myPl.shakeTimer = shakeTimer;
+        myPl.shakeIntensity = shakeIntensity;
+
+        updateHUD();
+        updateRadar();
+
+        requestAnimationFrame(() => clientLoop(id));
+    }
+
     // ---- START / RESET -----------------------------------------------------
-    function startGame() {
+    function soloGame() {
+        MP.mode = 'solo'; MP.myIdx = 0;
+        humanPlayers = [makePlayer(0)];
+        player = humanPlayers[0];
         document.getElementById('lobby').style.display = 'none';
         resetGame();
     }
+
+    function startGame() { soloGame(); } // legacy alias
 
     function resetGame() {
         overlay.classList.remove('show');
         if (pauseMenu) pauseMenu.style.display = 'none';
         paused = false;
-        gameRunning = false; // stop any running loop
-        player = {
-            x: 30 * CS,
-            y: 42 * CS,
-            angle: -Math.PI / 2,
-            pitch: 0,
-            health: 100,
-            guns: {
-                pp7:     { has: true,  ammo: 24 },
-                kf7:     { has: false, ammo: 0  },
-                shotgun: { has: false, ammo: 0  },
-                sniper:  { has: false, ammo: 0  },
-            },
-            currentGun: 'pp7',
-            bobPhase: 0,
-            bobOffset: 0,
-            crouching: false,
-            heightOffset: 0,
-            aiming: false,
-            grenades: 2
-        };
-        gun = { recoil: 0, muzzleFlash: 0, cooldown: 0 };
-        damageFlash = 0;
-        regenTimer = 0;
-        bulletTrails = [];
-        corpses = [];
-        grenades = [];
-        shakeTimer = 0;
-        shakeIntensity = 0;
+        gameRunning = false;
+
+        // Rebuild humanPlayers if needed (preserve in host mode)
+        if (humanPlayers.length === 0) humanPlayers = [makePlayer(0)];
+        // Reset all players
+        humanPlayers.forEach((pl, i) => {
+            const sp = PLAYER_SPAWNS[i % 4];
+            pl.x = sp.x; pl.y = sp.y; pl.angle = sp.a;
+            pl.pitch = 0; pl.health = 100;
+            pl.guns = { pp7:{has:true,ammo:24}, kf7:{has:false,ammo:0}, shotgun:{has:false,ammo:0}, sniper:{has:false,ammo:0} };
+            pl.currentGun = 'pp7';
+            pl.bobPhase = 0; pl.bobOffset = 0; pl.crouching = false; pl.heightOffset = 0;
+            pl.aiming = false; pl.grenades = 2;
+            pl.gun = { recoil:0, muzzleFlash:0, cooldown:0 };
+            pl.damageFlash = 0; pl.regenTimer = 0; pl.shakeTimer = 0; pl.shakeIntensity = 0;
+            pl.fov = Math.PI/2.5; pl.bulletTrails = [];
+            pl.kills = 0; pl._inputBits = 0; pl._fireOnce = false; pl._grenThrown = false;
+        });
+
+        player = humanPlayers[MP.myIdx] || humanPlayers[0];
+        gun = player.gun;
+        damageFlash = 0; regenTimer = 0; bulletTrails = player.bulletTrails;
+        shakeTimer = 0; shakeIntensity = 0;
+        corpses = []; grenades = [];
         G_cheats = { licence: false, invincible: false, turbo: false };
-        cheatBuffer = [];
-        cheatMessage = '';
-        cheatMessageTimer = 0;
-        FOV = Math.PI / 2.5;
-        HALF_FOV = FOV / 2;
+        cheatBuffer = []; cheatMessage = ''; cheatMessageTimer = 0;
+        FOV = Math.PI / 2.5; HALF_FOV = FOV / 2;
+        player.fov = FOV;
         OBJECTIVES[0].done = false;
         for (const d of DOORS) { d.open = false; d.offset = 0; d.timer = 0; }
         initPickups();
         spawnEnemies();
         gameRunning = true;
         const id = ++loopId;
-        loop(id);
+        if (MP.mode === 'client') clientLoop(id);
+        else loop(id);
     }
 
+    // ---- MULTIPLAYER NETWORKING --------------------------------------------
+    function mpSendInput(bits) {
+        if (!MP.hostConn || !MP.hostConn.open) return;
+        const myPl = humanPlayers[MP.myIdx] || player;
+        try {
+            MP.hostConn.send(JSON.stringify({
+                t:'input', bits:bits||0,
+                a:+myPl.angle.toFixed(4), p:+myPl.pitch.toFixed(4),
+                aim:myPl.aiming, gun:myPl.currentGun,
+                fire:!!(bits & INP.FIRE),
+                gren:myPl._grenThrown||false
+            }));
+            myPl._grenThrown = false;
+        } catch(e) {}
+    }
+
+    function mpHandleInput(msg, playerIdx) {
+        const pl = humanPlayers[playerIdx];
+        if (!pl) return;
+        pl._inputBits = msg.bits || 0;
+        if (msg.a != null) pl.angle = msg.a;
+        if (msg.p != null) pl.pitch = Math.max(-0.4, Math.min(0.4, msg.p));
+        pl.aiming = !!msg.aim;
+        if (msg.gun && pl.guns[msg.gun] && pl.guns[msg.gun].has) pl.currentGun = msg.gun;
+        pl._fireOnce = !!msg.fire;
+        pl._grenThrown = !!msg.gren;
+    }
+
+    function mpBuildState() {
+        return JSON.stringify({
+            t:'state',
+            players: humanPlayers.map(pl => ({
+                x:Math.round(pl.x), y:Math.round(pl.y),
+                a:+pl.angle.toFixed(4), p:+(pl.pitch||0).toFixed(4),
+                hp:pl.health, gun:pl.currentGun,
+                ammo:pl.guns[pl.currentGun].ammo, gren:pl.grenades,
+                crouch:pl.crouching, bob:+(pl.bobOffset||0).toFixed(2)
+            })),
+            enemies: enemies.map(e => ({ x:Math.round(e.x), y:Math.round(e.y), hp:e.health, act:+e.active, st:e.state })),
+            pkups: pickups.map(p => +p.active),
+            doors: DOORS.map(d => +d.open),
+            grens: grenades.filter(g=>g.active).map(g => ({x:Math.round(g.x),y:Math.round(g.y),f:g.fuse})),
+            corps: corpses.slice(-10).map(c => ({x:Math.round(c.x),y:Math.round(c.y),tp:c.type})),
+            objs: OBJECTIVES.map(o => +o.done),
+        });
+    }
+
+    function mpApplyState(data) {
+        for (let i = 0; i < data.players.length; i++) {
+            const sp = data.players[i];
+            if (!humanPlayers[i]) continue;
+            const pl = humanPlayers[i];
+            if (i === MP.myIdx) {
+                // Own player: gentle correction for position
+                const dist = Math.hypot(sp.x - pl.x, sp.y - pl.y);
+                if (dist > 48) { pl.x = sp.x; pl.y = sp.y; }
+                else { pl.x = pl.x*0.85 + sp.x*0.15; pl.y = pl.y*0.85 + sp.y*0.15; }
+                pl.health = sp.hp;
+                if (pl.guns[sp.gun]) pl.guns[sp.gun].ammo = sp.ammo;
+                pl.grenades = sp.gren;
+            } else {
+                pl.x = sp.x; pl.y = sp.y; pl.angle = sp.a; pl.pitch = sp.p;
+                pl.health = sp.hp; pl.currentGun = sp.gun;
+                if (pl.guns[sp.gun]) pl.guns[sp.gun].ammo = sp.ammo;
+                pl.grenades = sp.gren; pl.crouching = sp.crouch; pl.bobOffset = sp.bob;
+            }
+        }
+        for (let i = 0; i < data.enemies.length; i++) {
+            const se = data.enemies[i];
+            if (!enemies[i]) continue;
+            enemies[i].x = se.x; enemies[i].y = se.y;
+            enemies[i].health = se.hp; enemies[i].active = !!se.act; enemies[i].state = se.st;
+        }
+        data.pkups.forEach((a, i) => { if (pickups[i]) pickups[i].active = !!a; });
+        data.doors.forEach((o, i) => { DOORS[i].open = !!o; DOORS[i].offset = DOORS[i].offset*0.85 + o*0.15; });
+        grenades = (data.grens||[]).map(g => ({x:g.x, y:g.y, vx:0, vy:0, fuse:g.f, active:true}));
+        corpses = (data.corps||[]).map(c => ({x:c.x, y:c.y, type:c.tp}));
+        if (data.objs) data.objs.forEach((d, i) => { if (OBJECTIVES[i]) OBJECTIVES[i].done = !!d; });
+    }
+
+    function mpSendState() {
+        const s = mpBuildState();
+        for (const conn of MP.clientConns) {
+            if (conn && conn.open) { try { conn.send(s); } catch(e) {} }
+        }
+    }
+
+    function hostGame() {
+        document.getElementById('lobbyMain').style.display = 'none';
+        document.getElementById('lobbyWait').style.display = 'block';
+        const lobbyStatus = document.getElementById('lobbyStatus');
+        lobbyStatus.textContent = 'Creating room...';
+        MP.mode = 'host'; MP.myIdx = 0;
+        MP.clientConns = [];
+        humanPlayers = [makePlayer(0)];
+        player = humanPlayers[0];
+        MP.peer = new Peer();
+        MP.peer.on('open', id => {
+            lobbyStatus.innerHTML = `Room code:<br><b style="color:#ff4444;font-size:22px;letter-spacing:3px;">${id}</b><br><span style="color:#aaa;font-size:11px;">Share with friends &rarr; they click JOIN</span><br><span id="pCount" style="color:#8bc34a;">Players: 1</span>`;
+            document.getElementById('startHostBtn').style.display = 'inline-block';
+        });
+        MP.peer.on('connection', conn => {
+            const playerIdx = humanPlayers.length;
+            if (playerIdx >= 4) { conn.close(); return; }
+            humanPlayers.push(makePlayer(playerIdx));
+            MP.clientConns.push(conn);
+            conn.on('data', raw => {
+                try { const msg = JSON.parse(raw); if (msg.t==='input') mpHandleInput(msg, MP.clientConns.indexOf(conn)+1); } catch(e) {}
+            });
+            conn.on('close', () => {
+                const idx = MP.clientConns.indexOf(conn);
+                if (idx >= 0) { MP.clientConns.splice(idx,1); humanPlayers.splice(idx+1,1); }
+                const pc = document.getElementById('pCount');
+                if (pc) pc.textContent = 'Players: ' + humanPlayers.length;
+            });
+            const pc = document.getElementById('pCount');
+            if (pc) pc.textContent = 'Players: ' + humanPlayers.length;
+        });
+        MP.peer.on('error', err => { lobbyStatus.textContent = 'Error: ' + err.message; });
+    }
+
+    function joinGame() {
+        const code = document.getElementById('joinCode').value.trim();
+        if (!code) return;
+        document.getElementById('lobbyMain').style.display = 'none';
+        document.getElementById('lobbyWait').style.display = 'block';
+        const lobbyStatus = document.getElementById('lobbyStatus');
+        lobbyStatus.textContent = 'Connecting...';
+        MP.mode = 'client';
+        MP.peer = new Peer();
+        MP.peer.on('open', () => {
+            MP.hostConn = MP.peer.connect(code);
+            MP.hostConn.on('open', () => { lobbyStatus.textContent = 'Connected! Waiting for host to start...'; });
+            MP.hostConn.on('data', raw => {
+                try {
+                    const msg = JSON.parse(raw);
+                    if (msg.t === 'start') {
+                        MP.myIdx = msg.playerIdx;
+                        humanPlayers = Array.from({length: msg.numPlayers}, (_, i) => makePlayer(i));
+                        player = humanPlayers[MP.myIdx];
+                        document.getElementById('lobby').style.display = 'none';
+                        OBJECTIVES[0].done = false;
+                        for (const d of DOORS) { d.open=false; d.offset=0; d.timer=0; }
+                        initPickups(); spawnEnemies();
+                        gameRunning = true;
+                        const id = ++loopId; clientLoop(id);
+                    } else if (msg.t === 'state') {
+                        mpApplyState(msg);
+                    }
+                } catch(e) {}
+            });
+            MP.hostConn.on('close', () => { gameRunning=false; alert('Disconnected from host.'); });
+        });
+        MP.peer.on('error', err => {
+            lobbyStatus.textContent = 'Error: ' + err.message;
+            document.getElementById('lobbyMain').style.display = 'block';
+            document.getElementById('lobbyWait').style.display = 'none';
+        });
+    }
+
+    function startHostedGame() {
+        document.getElementById('lobby').style.display = 'none';
+        for (let i = 0; i < MP.clientConns.length; i++) {
+            const conn = MP.clientConns[i];
+            if (conn && conn.open) {
+                try { conn.send(JSON.stringify({ t:'start', playerIdx:i+1, numPlayers:humanPlayers.length })); } catch(e) {}
+            }
+        }
+        resetGame();
+    }
+
+    window.soloGame = soloGame;
     window.startGame = startGame;
     window.resetGame = resetGame;
+    window.hostGame = hostGame;
+    window.joinGame = joinGame;
+    window.startHostedGame = startHostedGame;
     </script>
 </body>
 </html>
